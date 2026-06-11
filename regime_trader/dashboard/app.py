@@ -10,7 +10,13 @@ yfinance data even when no broker is connected.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+# Streamlit runs this file as a standalone script, so the project root is not on
+# the import path by default. Add it so `import regime_trader` resolves whether
+# launched via `streamlit run` or `python -m`.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import pandas as pd
 import plotly.graph_objects as go
