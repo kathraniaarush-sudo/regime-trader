@@ -1,0 +1,95 @@
+# =============================================================================
+# Regime Trader — central configuration
+# Everything you would normally tune lives here. Change tickers, HMM params,
+# strategy allocations, and risk limits WITHOUT touching code.
+# =============================================================================
+
+broker:
+  name: alpaca
+  paper: true              # paper trading is the default and strongly recommended
+  data_feed: iex           # alpaca data feed (iex is free); 'sip' needs a subscription
+
+universe:
+  # Tickers the bot trades / classifies. The first ticker is the "regime anchor"
+  # used to detect the market-wide volatility regime.
+  tickers: ["SPY"]
+  regime_anchor: "SPY"
+
+hmm:
+  # The brain. It does NOT predict price — it classifies the volatility regime.
+  min_regimes: 3           # search this many...
+  max_regimes: 7           # ...through this many, and auto-pick the best by BIC
+  train_lookback_days: 504 # ~2 years of daily bars to fit on
+  covariance_type: "diag"
+  n_iter: 200
+  random_state: 42
+  # Stability filter: a regime must persist this many consecutive bars before
+  # the system acts on it. Reduces whipsaw from a flickering classifier.
+  min_persistence_bars: 3
+  # If the regime flips more than this many times in the lookback window, treat
+  # the market as "uncertain" and shrink position sizes.
+  max_flips_in_window: 4
+  flip_window_bars: 20
+
+strategy:
+  # Regime-driven allocation. THIS is the part you customize to your own edge.
+  # Each regime maps to a target portfolio exposure and leverage.
+  # gross_exposure is the fraction of equity to deploy; leverage multiplies it.
+  regimes:
+    crash:
+      gross_exposure: 0.00
+      leverage: 1.00
+      direction: flat
+    bear:
+      gross_exposure: 0.25
+      leverage: 1.00
+      direction: long
+    neutral:
+      gross_exposure: 0.50
+      leverage: 1.00
+      direction: long
+    bull:
+      gross_exposure: 0.95
+      leverage: 1.00
+      direction: long
+    euphoria:
+      gross_exposure: 0.95
+      leverage: 1.25
+      direction: long
+  # Only rebalance when target weight drifts more than this from current weight.
+  rebalance_threshold: 0.05
+  # Scale exposure by HMM confidence (posterior prob of the active regime).
+  confidence_scaling: true
+  min_confidence: 0.50
+
+risk:
+  # The safety net. These run INDEPENDENTLY of the strategy and have veto power.
+  max_risk_per_trade: 0.01     # risk at most 1% of equity per position
+  max_leverage: 1.25
+  max_position_weight: 1.00    # cap any single name at this fraction of equity
+  max_correlation: 0.80        # block a new position correlated above this
+  # Circuit breakers (drawdown is measured from the running equity peak):
+  daily_loss_halve: 0.02       # down 2% on the day -> cut all sizes in half
+  daily_loss_flatten: 0.03     # down 3% on the day -> close everything
+  weekly_loss_halve: 0.05      # down 5% on the week -> cut all sizes in half
+  max_drawdown_stop: 0.10      # down 10% from peak -> HARD STOP + block file
+  block_file: "TRADING_BLOCKED"
+
+backtest:
+  in_sample_days: 252          # rolling train window (1 trading year)
+  out_sample_days: 126         # rolling test window (~6 months)
+  step_days: 126               # walk-forward step
+  slippage_bps: 5              # round-trip slippage assumption, basis points
+  commission_bps: 0
+  initial_equity: 100000
+
+execution:
+  bar_interval: "1Day"         # bar granularity for the live loop
+  poll_seconds: 60             # how often the live loop wakes up
+
+monitoring:
+  log_dir: "logs"
+  alerts:
+    enabled: false
+    webhook_url: ""            # optional Slack/Discord webhook for critical alerts
+    email: ""

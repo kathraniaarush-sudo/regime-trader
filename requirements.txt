@@ -1,0 +1,25 @@
+# Core numerics
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+scikit-learn>=1.3
+
+# Hidden Markov Models (the "brain")
+hmmlearn>=0.3.0
+
+# Market data (free historical bars for backtesting)
+yfinance>=0.2.40
+
+# Broker + HTTP
+requests>=2.31
+
+# Config / env
+python-dotenv>=1.0
+PyYAML>=6.0
+
+# Dashboard
+streamlit>=1.30
+plotly>=5.18
+
+# Tests
+pytest>=7.4

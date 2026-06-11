@@ -1,0 +1,33 @@
+# Secrets — NEVER commit
+.env
+*.env
+!.env.example
+
+# Risk kill-switch artifact (written by the risk manager on max drawdown)
+TRADING_BLOCKED
+state/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Data / logs / artifacts
+logs/*.log
+logs/*.jsonl
+*.csv
+*.parquet
+data/
+artifacts/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
