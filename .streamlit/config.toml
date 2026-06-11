@@ -1,0 +1,16 @@
+# Robinhood-style dark theme. Near-black surface, single green/red gain-loss
+# accent, clean grotesk type. Most of the visual language is layered on in CSS
+# inside dashboard/app.py; this sets the base so Streamlit's own chrome matches.
+[theme]
+base = "dark"
+primaryColor = "#00C805"
+backgroundColor = "#0a0b0e"
+secondaryBackgroundColor = "#14161b"
+textColor = "#f4f5f6"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
