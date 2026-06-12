@@ -41,6 +41,14 @@ def get_history(symbol: str, lookback_days: int = 504, interval: str = "1d") -> 
     keep = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
     df = df[keep].dropna()
     df.index = pd.to_datetime(df.index)
+
+    # Drop the current session's bar. Intraday it is incomplete and updates on
+    # every fetch, which would make backtests non-reproducible and would train /
+    # detect on a partial bar. We only ever act on completed daily bars.
+    if interval.endswith("d"):
+        today = pd.Timestamp.now().normalize()
+        df = df[df.index.normalize() < today]
+
     return df.tail(lookback_days)
 
 
