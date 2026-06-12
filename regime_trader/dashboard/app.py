@@ -172,6 +172,52 @@ def load_basket():
     return b.regime, sum(b.weights.values()), rows
 
 
+@st.cache_data(ttl=600, show_spinner=False)
+def load_challenge(anchor: str):
+    """Your paper equity vs SPY since the challenge started (both rebased to 100).
+
+    Uses Alpaca's native portfolio-history endpoint, clipped to the challenge
+    start recorded in the trader state. Returns (bot, spy) normalised series or
+    None if the challenge hasn't produced two data points yet.
+    """
+    state_path = PROJECT_ROOT / "state" / "portfolio_state.json"
+    start = None
+    if state_path.exists():
+        try:
+            st_ = json.loads(state_path.read_text())
+            start = st_.get("challenge_start") or st_.get("last_rebalance")
+        except json.JSONDecodeError:
+            pass
+    if not start:
+        return None
+    try:
+        from regime_trader.broker.alpaca_client import AlpacaClient
+        client = AlpacaClient()
+        if not client.is_configured:
+            return None
+        h = client.get("/v2/account/portfolio/history",
+                       params={"period": "1M", "timeframe": "1D", "extended_hours": "false"})
+    except Exception:
+        return None
+
+    pairs = [(t, e) for t, e in zip(h.get("timestamp", []), h.get("equity", [])) if e]
+    if len(pairs) < 2:
+        return None
+    bot = pd.Series([e for _, e in pairs], index=pd.to_datetime([t for t, _ in pairs], unit="s"))
+
+    cutoff = pd.to_datetime(start)
+    cutoff = (cutoff.tz_convert("UTC").tz_localize(None) if cutoff.tzinfo else cutoff).normalize()
+    bot = bot[bot.index >= cutoff]
+    if len(bot) < 2:
+        return None
+
+    spy = load_prices(anchor, 120)["close"]
+    spy = spy[spy.index >= cutoff]
+    if len(spy) < 2:
+        return None
+    return bot / bot.iloc[0] * 100, spy / spy.iloc[0] * 100
+
+
 def fetch_live() -> dict:
     out = {"account": None, "open_pl": 0.0, "positions": 0, "market_open": None}
     try:
@@ -351,6 +397,43 @@ def main():
                     f"<div class='d {spy_cls}'>{'▲' if spy_chg>=0 else '▼'} {abs(spy_chg):.2f}%</div>")
     st.markdown("<div class='yf-tiles'>" + tile("Portfolio value", port_v, port_d)
                 + reg_tile + exp_tile + spy_tile + "</div>", unsafe_allow_html=True)
+
+    # --- challenge scoreboard: you vs S&P 500 ---
+    if acct:
+        ch = load_challenge(anchor)
+        st.markdown("<div class='yf-h'>You vs S&amp;P 500 "
+                    "<span class='sub'>30-day challenge · paper equity rebased to 100</span></div>",
+                    unsafe_allow_html=True)
+        if ch is None:
+            st.markdown("<div class='yf-list'><div class='yf-empty'>Scoreboard builds after your "
+                        "first full trading day. Orders are in — check back once the market opens "
+                        "and they fill.</div></div>", unsafe_allow_html=True)
+        else:
+            bot_n, spy_n = ch
+            lead = float(bot_n.iloc[-1] - spy_n.iloc[-1])
+            lcls, lword = ("up", "ahead of") if lead >= 0 else ("down", "behind")
+            st.markdown(f"<div class='yf-tile' style='margin-bottom:.6rem'>"
+                        f"<div class='k'>Your edge vs S&amp;P 500</div>"
+                        f"<div class='v {lcls}'>{lead:+.2f}%</div>"
+                        f"<div class='d sub'>you {bot_n.iloc[-1]-100:+.2f}% · "
+                        f"SPY {spy_n.iloc[-1]-100:+.2f}% · {lword} the index</div></div>",
+                        unsafe_allow_html=True)
+            cfig = go.Figure()
+            cfig.add_trace(go.Scatter(x=bot_n.index, y=bot_n, name="You", mode="lines",
+                                      line=dict(color=TEAL, width=2.4),
+                                      hovertemplate="You: %{y:.2f}<extra></extra>"))
+            cfig.add_trace(go.Scatter(x=spy_n.index, y=spy_n, name="S&P 500", mode="lines",
+                                      line=dict(color=MUTED, width=1.8, dash="dot"),
+                                      hovertemplate="SPY: %{y:.2f}<extra></extra>"))
+            cfig.update_layout(height=240, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               margin=dict(l=8, r=8, t=6, b=8), hovermode="x unified",
+                               font=dict(family=FONT, color=MUTED, size=12),
+                               legend=dict(orientation="h", y=1.12, x=0),
+                               hoverlabel=dict(bgcolor=SURFACE2, bordercolor=BORDER,
+                                               font=dict(family=FONT, color=TEXT)))
+            cfig.update_xaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED)
+            cfig.update_yaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED)
+            st.plotly_chart(cfig, use_container_width=True, config={"displayModeBar": False})
 
     # --- price chart ---
     st.markdown(f"<div class='yf-h'>{anchor} price <span class='sub'>2-year history · "

@@ -108,6 +108,39 @@ streamlit run regime_trader/dashboard/app.py
    python -m regime_trader.main run --once    # single iteration
    ```
 
+## Running the 30-day challenge
+
+The momentum strategy (cross-sectional momentum + HMM regime overlay + vol
+targeting) is the "beat the index" mode. Backtest it, run it on paper, and watch
+yourself versus the S&P 500.
+
+```bash
+# 1. Backtest the strategy (free yfinance data)
+python -m regime_trader.main portfolio-backtest
+
+# 2. See exactly what it would trade, without sending orders
+python -m regime_trader.main portfolio --once --dry-run
+
+# 3. Start the challenge — first rebalance into the basket (paper account)
+python -m regime_trader.main portfolio --once
+
+# 4. Keep it running. Either a terminal:
+python -m regime_trader.main portfolio
+#    ...or the always-on launchd runner (survives reboots):
+cp deploy/com.regimetrader.bot.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.regimetrader.bot.plist   # see deploy/README.md
+
+# 5. Watch the scoreboard
+streamlit run regime_trader/dashboard/app.py     # "You vs S&P 500" updates daily
+```
+
+Tune the strategy in [`config/settings.yaml`](config/settings.yaml) under
+`portfolio` (universe, `top_n`, `target_vol`, `regime_gross`). Re-run the
+backtest after each change. Honest expectations: over a single 30-day window
+beating the index is close to a coin flip; the strategy's durable edge is
+*risk-adjusted* return and shallower drawdowns, and it shines in choppy or
+falling markets. Not financial advice.
+
 ## Customising it to your strategy
 
 Everything tunable lives in [`config/settings.yaml`](config/settings.yaml):
