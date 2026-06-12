@@ -1,11 +1,12 @@
-"""Streamlit dashboard for the regime trader — Robinhood-style dark UI.
+"""Streamlit dashboard for the regime trader — Yahoo Finance-style data display.
 
 Run with:  streamlit run regime_trader/dashboard/app.py
 
-Design language: near-black surface, one green/red gain-loss accent, a clean
-grotesk typeface, oversized portfolio number, a single smooth area chart with a
-regime ribbon beneath it. Works offline using free yfinance data; shows live
-Alpaca account figures when credentials are configured.
+Design language borrowed from Yahoo Finance: labeled market-summary tiles, a
+clean formatted price chart with a regime overlay, and a watchlist-style basket
+table (ticker + company + sparkline + price + % badge + target weight). Dark
+theme, teal-green brand accent, green/red gain-loss semantics. Works offline
+using free yfinance data; shows live Alpaca figures when configured.
 """
 from __future__ import annotations
 
@@ -13,9 +14,6 @@ import json
 import sys
 from pathlib import Path
 
-# Streamlit runs this file as a standalone script, so the project root is not on
-# the import path by default. Add it so `import regime_trader` resolves whether
-# launched via `streamlit run` or `python -m`.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import pandas as pd
@@ -27,24 +25,42 @@ from regime_trader.core.features import build_features
 from regime_trader.core.settings import PROJECT_ROOT, load_settings
 from regime_trader.broker.market_data import get_history
 
-# ----------------------------------------------------------------- palette
-BG = "#0a0b0e"
-SURFACE = "#14161b"
-HAIRLINE = "rgba(255,255,255,0.07)"
-TEXT = "#f4f5f6"
-MUTED = "#8b9097"
-UP = "#00c805"        # Robinhood green: gains / risk-on regimes
-DOWN = "#ff5a5f"      # losses / risk-off regimes
-FONT = "Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+# ----------------------------------------------------------- Yahoo-ish palette
+PAGE = "#0f1318"
+SURFACE = "#191e25"
+SURFACE2 = "#222933"
+BORDER = "#2b323c"
+TEXT = "#e7eaee"
+MUTED = "#98a1ac"
+UP = "#15c784"          # gains
+DOWN = "#f0616d"        # losses
+TEAL = "#13b29a"        # brand accent (Yahoo Finance teal-green)
+FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
 REGIME_COLORS = {
-    "crash": "#c4102e",
-    "bear": "#ff5a5f",
-    "neutral": "#7d838c",
-    "bull": "#00c805",
-    "euphoria": "#36e27b",
+    "crash": "#b22a3a", "bear": "#f0616d", "neutral": "#8a93a0",
+    "bull": "#15c784", "euphoria": "#10e0a0",
 }
-RISK_ON = {"bull", "euphoria"}
+
+NAMES = {
+    "AAPL": "Apple", "MSFT": "Microsoft", "NVDA": "NVIDIA", "AMZN": "Amazon",
+    "GOOGL": "Alphabet", "META": "Meta Platforms", "TSLA": "Tesla", "ORCL": "Oracle",
+    "CSCO": "Cisco Systems", "INTC": "Intel", "IBM": "IBM", "ADBE": "Adobe",
+    "CRM": "Salesforce", "AMD": "AMD", "QCOM": "Qualcomm", "TXN": "Texas Instruments",
+    "HPQ": "HP Inc.", "T": "AT&T", "VZ": "Verizon", "JPM": "JPMorgan Chase",
+    "BAC": "Bank of America", "WFC": "Wells Fargo", "C": "Citigroup", "GS": "Goldman Sachs",
+    "MS": "Morgan Stanley", "V": "Visa", "MA": "Mastercard", "AXP": "American Express",
+    "JNJ": "Johnson & Johnson", "UNH": "UnitedHealth", "PFE": "Pfizer", "MRK": "Merck",
+    "ABBV": "AbbVie", "ABT": "Abbott", "TMO": "Thermo Fisher", "LLY": "Eli Lilly",
+    "CVS": "CVS Health", "BMY": "Bristol-Myers Squibb", "PG": "Procter & Gamble",
+    "KO": "Coca-Cola", "PEP": "PepsiCo", "WMT": "Walmart", "COST": "Costco",
+    "MCD": "McDonald's", "NKE": "Nike", "SBUX": "Starbucks", "TGT": "Target",
+    "HD": "Home Depot", "LOW": "Lowe's", "DIS": "Disney", "GE": "GE Aerospace",
+    "CAT": "Caterpillar", "BA": "Boeing", "HON": "Honeywell", "UPS": "UPS",
+    "MMM": "3M", "XOM": "Exxon Mobil", "CVX": "Chevron", "SLB": "Schlumberger",
+    "GM": "General Motors", "F": "Ford", "KHC": "Kraft Heinz", "MO": "Altria",
+    "SPY": "S&P 500 ETF",
+}
 
 st.set_page_config(page_title="Regime Trader", layout="wide", page_icon="📈",
                    initial_sidebar_state="collapsed")
@@ -55,91 +71,74 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-        .stApp {{ background: {BG}; }}
+        .stApp {{ background:{PAGE}; }}
         html, body, [data-testid="stAppViewContainer"], [class*="css"] {{
-            font-family: {FONT};
-            color: {TEXT};
-        }}
-        [data-testid="stHeader"] {{ background: transparent; }}
-        #MainMenu, footer, [data-testid="stToolbar"] {{ visibility: hidden; }}
-        .block-container {{ max-width: 1180px; padding-top: 2.2rem; padding-bottom: 4rem; }}
+            font-family:{FONT}; color:{TEXT}; }}
+        [data-testid="stHeader"] {{ background:transparent; }}
+        #MainMenu, footer, [data-testid="stToolbar"] {{ visibility:hidden; }}
+        .block-container {{ max-width:1180px; padding-top:1.6rem; padding-bottom:4rem; }}
 
-        .rt-brand {{ display:flex; align-items:center; gap:.6rem; margin-bottom:2.1rem; }}
-        .rt-brand .mark {{
-            width:30px; height:30px; border-radius:9px;
-            background: linear-gradient(150deg, {UP}, #00e676);
-            display:flex; align-items:center; justify-content:center;
-            color:#06210b; font-weight:800; font-size:18px;
-        }}
-        .rt-brand .name {{ font-weight:700; font-size:1.05rem; letter-spacing:-.01em; }}
-        .rt-brand .status {{
-            margin-left:auto; font-size:.78rem; color:{MUTED}; font-weight:600;
-            display:flex; align-items:center; gap:.45rem;
-        }}
-        .rt-brand .live {{ width:8px; height:8px; border-radius:50%; }}
+        .yf-bar {{ display:flex; align-items:center; gap:.55rem; margin-bottom:1.4rem; }}
+        .yf-bar .mark {{ width:28px; height:28px; border-radius:7px;
+            background:{TEAL}; display:flex; align-items:center; justify-content:center;
+            color:#04201b; font-weight:800; font-size:16px; }}
+        .yf-bar .name {{ font-weight:700; font-size:1.02rem; }}
+        .yf-bar .status {{ margin-left:auto; font-size:.78rem; color:{MUTED}; font-weight:600;
+            display:flex; align-items:center; gap:.4rem; }}
+        .yf-bar .dot {{ width:8px; height:8px; border-radius:50%; }}
 
-        .rt-label {{ color:{MUTED}; font-size:.82rem; font-weight:600; letter-spacing:.01em; }}
-        .rt-value {{
-            font-size:3.4rem; font-weight:800; line-height:1.02; letter-spacing:-.03em;
-            font-variant-numeric: tabular-nums; margin:.15rem 0 .35rem;
-        }}
-        .rt-delta {{ font-size:1.0rem; font-weight:700; font-variant-numeric: tabular-nums; }}
-        .rt-delta.up {{ color:{UP}; }}
-        .rt-delta.down {{ color:{DOWN}; }}
-        .rt-delta .sub {{ color:{MUTED}; font-weight:600; margin-left:.4rem; }}
+        /* market summary tiles */
+        .yf-tiles {{ display:grid; grid-template-columns:repeat(4,1fr); gap:.7rem; margin-bottom:.4rem; }}
+        .yf-tile {{ background:{SURFACE}; border:1px solid {BORDER}; border-radius:12px; padding:.85rem 1rem;
+            box-shadow:rgba(0,0,0,0.18) 0px 4px 12px 0px; }}
+        .yf-tile .k {{ color:{MUTED}; font-size:.72rem; font-weight:700; letter-spacing:.05em;
+            text-transform:uppercase; }}
+        .yf-tile .v {{ font-size:1.5rem; font-weight:800; margin-top:.3rem; letter-spacing:-.02em;
+            font-variant-numeric:tabular-nums; line-height:1.1; }}
+        .yf-tile .d {{ font-size:.82rem; font-weight:700; margin-top:.2rem; font-variant-numeric:tabular-nums; }}
+        .yf-tile .d.sub {{ color:{MUTED}; font-weight:600; }}
+        .up {{ color:{UP}; }} .down {{ color:{DOWN}; }}
 
-        .rt-pill {{
-            display:inline-flex; align-items:center; gap:.55rem;
-            padding:.5rem .95rem; border-radius:999px;
-            background:var(--c-soft); border:1px solid var(--c-line);
-            font-weight:800; font-size:.95rem; letter-spacing:.02em;
-        }}
-        .rt-pill .swatch {{ width:9px; height:9px; border-radius:50%; background:var(--c); }}
-        .rt-pill .conf {{ color:{MUTED}; font-weight:700; }}
-        .rt-right {{ text-align:right; }}
-        .rt-right .bp {{ color:{MUTED}; font-size:.86rem; font-weight:600; margin-top:.7rem; }}
-        .rt-right .bp b {{ color:{TEXT}; font-variant-numeric: tabular-nums; }}
+        .yf-h {{ font-size:1.02rem; font-weight:700; margin:1.9rem 0 .7rem; }}
+        .yf-h .sub {{ color:{MUTED}; font-weight:500; font-size:.84rem; margin-left:.5rem; }}
 
-        .rt-section {{ font-size:.82rem; color:{MUTED}; font-weight:700; letter-spacing:.06em;
-            text-transform:uppercase; margin:2.4rem 0 .9rem; }}
+        /* watchlist */
+        .yf-list {{ background:{SURFACE}; border:1px solid {BORDER}; border-radius:12px; overflow:hidden; }}
+        .yf-row {{ display:grid; grid-template-columns:1.7fr 84px 1.1fr 1.4fr; align-items:center;
+            gap:.6rem; padding:.72rem 1rem; border-top:1px solid {BORDER}; }}
+        .yf-row:first-child {{ border-top:none; }}
+        .yf-row .sym {{ font-weight:700; font-size:.95rem; }}
+        .yf-row .co {{ color:{MUTED}; font-size:.76rem; white-space:nowrap; overflow:hidden;
+            text-overflow:ellipsis; }}
+        .yf-row .px {{ text-align:right; font-weight:700; font-variant-numeric:tabular-nums; font-size:.92rem; }}
+        .yf-badge {{ display:inline-block; min-width:62px; text-align:center; padding:.18rem .4rem;
+            border-radius:6px; font-size:.78rem; font-weight:700; font-variant-numeric:tabular-nums; }}
+        .yf-wt {{ display:flex; align-items:center; gap:.5rem; justify-content:flex-end; }}
+        .yf-wt .track {{ flex:1; max-width:120px; height:7px; border-radius:4px; background:{SURFACE2}; overflow:hidden; }}
+        .yf-wt .fill {{ height:100%; background:{TEAL}; }}
+        .yf-wt .pct {{ font-size:.82rem; font-weight:700; color:{TEXT}; font-variant-numeric:tabular-nums;
+            min-width:42px; text-align:right; }}
+        .yf-head {{ display:grid; grid-template-columns:1.7fr 84px 1.1fr 1.4fr; gap:.6rem;
+            padding:.5rem 1rem; color:{MUTED}; font-size:.7rem; font-weight:700; letter-spacing:.05em;
+            text-transform:uppercase; }}
+        .yf-head .r {{ text-align:right; }}
 
-        .rt-tiles {{ display:grid; grid-template-columns:repeat(4,1fr); gap:.7rem; }}
-        .rt-tile {{
-            background:{SURFACE}; border:1px solid {HAIRLINE}; border-radius:14px;
-            padding:1.0rem 1.1rem;
-        }}
-        .rt-tile .k {{ color:{MUTED}; font-size:.78rem; font-weight:600; }}
-        .rt-tile .v {{ font-size:1.35rem; font-weight:800; margin-top:.35rem;
-            font-variant-numeric: tabular-nums; letter-spacing:-.01em; }}
-
-        .rt-feed {{ background:{SURFACE}; border:1px solid {HAIRLINE}; border-radius:14px; overflow:hidden; }}
-        .rt-row {{ display:flex; align-items:center; gap:1rem; padding:.85rem 1.15rem;
-            border-top:1px solid {HAIRLINE}; }}
-        .rt-row:first-child {{ border-top:none; }}
-        .rt-row .ic {{ width:34px; height:34px; border-radius:10px; flex:0 0 auto;
-            display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.95rem; }}
-        .rt-row .body {{ flex:1; min-width:0; }}
-        .rt-row .t {{ font-weight:700; font-size:.92rem; }}
-        .rt-row .s {{ color:{MUTED}; font-size:.79rem; margin-top:.12rem;
-            white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
-        .rt-row .when {{ color:{MUTED}; font-size:.78rem; font-variant-numeric:tabular-nums; flex:0 0 auto; }}
-        .rt-empty {{ color:{MUTED}; padding:1.6rem 1.2rem; font-size:.9rem; }}
-        .rt-legend {{ display:flex; flex-wrap:wrap; gap:1.1rem; margin-top:.6rem; }}
-        .rt-legend span {{ color:{MUTED}; font-size:.8rem; font-weight:600;
+        .yf-tile-row {{ display:grid; grid-template-columns:repeat(4,1fr); gap:.7rem; }}
+        .yf-empty {{ color:{MUTED}; padding:1.4rem 1.1rem; font-size:.9rem; }}
+        .yf-legend {{ display:flex; flex-wrap:wrap; gap:1rem; margin-top:.5rem; }}
+        .yf-legend span {{ color:{MUTED}; font-size:.78rem; font-weight:600;
             display:inline-flex; align-items:center; gap:.4rem; }}
-        .rt-legend i {{ width:10px; height:10px; border-radius:3px; display:inline-block; }}
+        .yf-legend i {{ width:10px; height:10px; border-radius:3px; }}
 
-        @media (max-width: 760px) {{
-            .rt-value {{ font-size:2.5rem; }}
-            .rt-tiles {{ grid-template-columns:repeat(2,1fr); }}
-            .rt-right {{ text-align:left; margin-top:1rem; }}
+        @media (max-width:760px) {{
+            .yf-tiles, .yf-tile-row {{ grid-template-columns:repeat(2,1fr); }}
+            .yf-row, .yf-head {{ grid-template-columns:1.4fr 60px 1fr; }}
+            .yf-row .wtcol, .yf-head .wtcol {{ display:none; }}
         }}
         </style>
-        """,
-        unsafe_allow_html=True,
-    )
+        """, unsafe_allow_html=True)
 
 
 # ----------------------------------------------------------------- data
@@ -150,17 +149,30 @@ def load_prices(symbol: str, lookback: int) -> pd.DataFrame:
 
 @st.cache_resource(show_spinner=False)
 def fit_detector(symbol: str, lookback: int, hmm_cfg: tuple):
-    cfg = dict(hmm_cfg)
     prices = load_prices(symbol, lookback)
     feats = build_features(prices)
-    det = RegimeDetector(**cfg)
-    det.fit(feats)
-    series = det.detect_series(feats)
-    return det, prices.reindex(feats.index), series
+    det = RegimeDetector(**dict(hmm_cfg)).fit(feats)
+    return det, prices.reindex(feats.index), det.detect_series(feats)
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def load_basket():
+    """Target basket with per-name price, day change, weight, and sparkline."""
+    from regime_trader.portfolio_trader import PortfolioTrader
+    from regime_trader.broker.market_data import get_histories
+    pt = PortfolioTrader()
+    closes = get_histories(pt.universe + [pt.anchor], pt.train_lookback + 60).dropna(axis=1)
+    b = pt.compute_target(closes)
+    rows = []
+    for t in b.selected:
+        s = closes[t].dropna()
+        chg = float(s.iloc[-1] / s.iloc[-2] - 1) if len(s) > 1 else 0.0
+        rows.append({"ticker": t, "name": NAMES.get(t, t), "weight": float(b.weights.get(t, 0.0)),
+                     "price": float(s.iloc[-1]), "chg": chg, "spark": s.tail(30).tolist()})
+    return b.regime, sum(b.weights.values()), rows
 
 
 def fetch_live() -> dict:
-    """Best-effort Alpaca read: account, open positions, market status."""
     out = {"account": None, "open_pl": 0.0, "positions": 0, "market_open": None}
     try:
         from regime_trader.broker.alpaca_client import AlpacaClient
@@ -173,15 +185,15 @@ def fetch_live() -> dict:
             out["market_open"] = client.is_market_open()
         except Exception:
             pass
-        positions = PositionTracker(client).list_positions()
-        out["positions"] = len(positions)
-        out["open_pl"] = sum(p.unrealized_pl for p in positions)
+        pos = PositionTracker(client).list_positions()
+        out["positions"] = len(pos)
+        out["open_pl"] = sum(p.unrealized_pl for p in pos)
     except Exception:
         pass
     return out
 
 
-def read_signal_feed(limit: int = 10) -> list[dict]:
+def read_signal_feed(limit: int = 8) -> list[dict]:
     path = PROJECT_ROOT / "logs" / "events.jsonl"
     if not path.exists():
         return []
@@ -191,19 +203,81 @@ def read_signal_feed(limit: int = 10) -> list[dict]:
             ev = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if ev.get("event") in {"order", "regime_change", "risk_check"}:
+        if ev.get("event") in {"order", "regime_change", "rebalance", "risk_check"}:
             rows.append(ev)
     return rows[-limit:][::-1]
 
 
 # ----------------------------------------------------------------- helpers
-def money(x: float) -> str:
+def money(x):
     return f"${x:,.2f}"
 
 
-def contiguous_runs(series: pd.Series):
-    vals, idx = series.tolist(), series.index
-    runs, start = [], 0
+def pct(x):
+    return f"{x:+.2f}%"
+
+
+def sparkline(values, color, w=76, h=22):
+    if not values or len(values) < 2:
+        return ""
+    lo, hi = min(values), max(values)
+    rng = (hi - lo) or 1.0
+    n = len(values)
+    pts = " ".join(f"{i/(n-1)*w:.1f},{h - (v-lo)/rng*(h-2) - 1:.1f}" for i, v in enumerate(values))
+    return (f'<svg width="{w}" height="{h}" viewBox="0 0 {w} {h}" preserveAspectRatio="none">'
+            f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="1.6" '
+            f'stroke-linejoin="round" stroke-linecap="round"/></svg>')
+
+
+def tile(label, value, delta_html=""):
+    return (f"<div class='yf-tile'><div class='k'>{label}</div>"
+            f"<div class='v'>{value}</div>{delta_html}</div>")
+
+
+# ----------------------------------------------------------------- charts
+def price_chart(prices, series):
+    close = prices["close"]
+    rising = close.iloc[-1] >= close.iloc[0]
+    line = UP if rising else DOWN
+    fill = "rgba(21,199,132,0.10)" if rising else "rgba(240,97,109,0.10)"
+    lo, hi = close.min(), close.max()
+    pad = (hi - lo) * 0.06 or 1.0
+    fig = go.Figure(go.Scatter(
+        x=close.index, y=close, mode="lines", name="Close",
+        line=dict(color=line, width=2), fill="tozeroy", fillcolor=fill,
+        hovertemplate="%{x|%b %d, %Y}<br>$%{y:.2f}<extra></extra>"))
+    # regime overlay bands
+    for x0, x1, reg in _runs(series["canonical"]):
+        fig.add_vrect(x0=x0, x1=x1, fillcolor=REGIME_COLORS.get(reg, MUTED),
+                      opacity=0.06, line_width=0, layer="below")
+    fig.update_layout(
+        height=330, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=8, r=8, t=8, b=8), font=dict(family=FONT, color=MUTED, size=12),
+        hovermode="x", hoverlabel=dict(bgcolor=SURFACE2, bordercolor=BORDER,
+                                       font=dict(family=FONT, color=TEXT)), showlegend=False)
+    fig.update_xaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED,
+                     showspikes=True, spikecolor=MUTED, spikethickness=1, spikedash="dot")
+    fig.update_yaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED,
+                     tickprefix="$", range=[lo - pad, hi + pad], side="right")
+    return fig
+
+
+def regime_ribbon(prices, series):
+    idx = prices.index
+    fig = go.Figure(go.Scatter(x=[idx[0], idx[-1]], y=[0, 0], mode="lines",
+                               line=dict(width=0), hoverinfo="skip", showlegend=False))
+    for x0, x1, reg in _runs(series["canonical"]):
+        fig.add_vrect(x0=x0, x1=x1, fillcolor=REGIME_COLORS.get(reg, MUTED),
+                      opacity=0.92, line_width=0, layer="below")
+    fig.update_layout(height=30, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                      margin=dict(l=8, r=8, t=0, b=0))
+    fig.update_xaxes(visible=False, range=[idx[0], idx[-1]])
+    fig.update_yaxes(visible=False, range=[0, 1])
+    return fig
+
+
+def _runs(series):
+    vals, idx, runs, start = series.tolist(), series.index, [], 0
     for i in range(1, len(vals)):
         if vals[i] != vals[i - 1]:
             runs.append((idx[start], idx[i - 1], vals[start]))
@@ -212,212 +286,153 @@ def contiguous_runs(series: pd.Series):
     return runs
 
 
-def price_chart(prices: pd.DataFrame) -> go.Figure:
-    close = prices["close"]
-    rising = close.iloc[-1] >= close.iloc[0]
-    color = UP if rising else DOWN
-    fill = "rgba(0,200,5,0.10)" if rising else "rgba(255,90,95,0.10)"
-    lo, hi = close.min(), close.max()
-    pad = (hi - lo) * 0.08 or 1.0
-
-    fig = go.Figure(go.Scatter(
-        x=close.index, y=close, mode="lines",
-        line=dict(color=color, width=2.2, shape="spline", smoothing=0.4),
-        fill="tozeroy", fillcolor=fill,
-        hovertemplate="%{x|%b %d, %Y}   $%{y:.2f}<extra></extra>",
-    ))
-    fig.update_layout(
-        height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=0, r=0, t=8, b=0), font=dict(family=FONT, color=MUTED),
-        hovermode="x", hoverlabel=dict(bgcolor=SURFACE, bordercolor=HAIRLINE,
-                                       font=dict(family=FONT, color=TEXT)),
-        showlegend=False,
-    )
-    fig.update_xaxes(showgrid=False, zeroline=False, showspikes=True,
-                     spikecolor=MUTED, spikethickness=1, spikedash="dot",
-                     spikemode="across", tickfont=dict(size=11), color=MUTED)
-    fig.update_yaxes(visible=False, range=[lo - pad, hi + pad])
-    return fig
-
-
-def regime_ribbon(prices: pd.DataFrame, series: pd.DataFrame) -> go.Figure:
-    idx = prices.index
-    fig = go.Figure(go.Scatter(x=[idx[0], idx[-1]], y=[0, 0], mode="lines",
-                               line=dict(width=0), hoverinfo="skip", showlegend=False))
-    for x0, x1, reg in contiguous_runs(series["canonical"]):
-        fig.add_vrect(x0=x0, x1=x1, fillcolor=REGIME_COLORS.get(reg, MUTED),
-                      opacity=0.92, line_width=0, layer="below")
-    fig.update_layout(height=34, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      margin=dict(l=0, r=0, t=0, b=0))
-    fig.update_xaxes(visible=False, range=[idx[0], idx[-1]])
-    fig.update_yaxes(visible=False, range=[0, 1])
-    return fig
-
-
-def mini_line(series: pd.Series, color: str) -> go.Figure:
-    fig = go.Figure(go.Scatter(x=series.index, y=series, mode="lines",
-                               line=dict(color=color, width=2),
-                               hovertemplate="%{y:.0%}<extra></extra>"))
-    fig.update_layout(height=150, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      margin=dict(l=0, r=0, t=6, b=0), showlegend=False,
-                      font=dict(family=FONT, color=MUTED), hovermode="x")
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False, range=[0, 1.02])
-    return fig
-
-
 # ----------------------------------------------------------------- view
 def main():
     inject_css()
-    settings = load_settings()
-    anchor = settings.get("universe.regime_anchor", "SPY")
-    lookback = settings.get("hmm.train_lookback_days", 504)
-    hmm_cfg = (
-        ("min_regimes", settings.get("hmm.min_regimes", 3)),
-        ("max_regimes", settings.get("hmm.max_regimes", 7)),
-        ("covariance_type", settings.get("hmm.covariance_type", "diag")),
-        ("min_persistence_bars", settings.get("hmm.min_persistence_bars", 3)),
-        ("max_flips_in_window", settings.get("hmm.max_flips_in_window", 4)),
-        ("flip_window_bars", settings.get("hmm.flip_window_bars", 20)),
-    )
+    s = load_settings()
+    anchor = s.get("universe.regime_anchor", "SPY")
+    lookback = s.get("hmm.train_lookback_days", 504)
+    max_regimes = s.get("portfolio.regime_max_regimes", s.get("hmm.max_regimes", 5))
+    hmm_cfg = (("min_regimes", s.get("hmm.min_regimes", 3)), ("max_regimes", max_regimes),
+               ("covariance_type", s.get("hmm.covariance_type", "diag")),
+               ("min_persistence_bars", s.get("hmm.min_persistence_bars", 3)),
+               ("max_flips_in_window", s.get("hmm.max_flips_in_window", 4)),
+               ("flip_window_bars", s.get("hmm.flip_window_bars", 20)))
 
-    with st.spinner(""):
+    with st.spinner("Loading market data…"):
         det, prices, series = fit_detector(anchor, lookback, hmm_cfg)
     live = fetch_live()
 
     last = series.iloc[-1]
-    regime = str(last["label"])
-    canon = str(last["canonical"])
-    conf = float(last["confidence"])
-    c = REGIME_COLORS.get(canon, MUTED)
+    regime, conf = str(last["canonical"]), float(last["confidence"])
+    rc = REGIME_COLORS.get(regime, MUTED)
 
-    # --- brand bar ---------------------------------------------------------
+    # SPY day change
+    spy_px = float(prices["close"].iloc[-1])
+    spy_chg = float(prices["close"].iloc[-1] / prices["close"].iloc[-2] - 1) * 100
+
+    # --- top bar ---
     if live["market_open"] is True:
         status, dot = "Market open", UP
     elif live["market_open"] is False:
         status, dot = "Market closed", MUTED
     else:
         status, dot = "Paper account not connected", MUTED
-    st.markdown(
-        f"""<div class="rt-brand">
-            <div class="mark">M</div><div class="name">Regime Trader</div>
-            <div class="status"><span class="live" style="background:{dot}"></span>{status}</div>
-        </div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="yf-bar"><div class="mark">R</div>
+        <div class="name">Regime Trader</div>
+        <div class="status"><span class="dot" style="background:{dot}"></span>{status}</div></div>""",
+        unsafe_allow_html=True)
 
-    # --- hero: portfolio value + regime -----------------------------------
+    # --- market summary tiles ---
     acct = live["account"]
-    left, right = st.columns([3, 2], gap="large")
-    with left:
-        if acct:
-            pl = live["open_pl"]
-            base = acct.equity - pl
-            pct = (pl / base * 100) if base else 0.0
-            up = pl >= 0
-            arrow = "▲" if up else "▼"
-            cls = "up" if up else "down"
-            sub = (f"{live['positions']} open position" + ("s" if live["positions"] != 1 else "")
-                   if live["positions"] else "no open positions")
-            st.markdown(
-                f"""<div class="rt-label">Portfolio value</div>
-                <div class="rt-value">{money(acct.equity)}</div>
-                <div class="rt-delta {cls}">{arrow} {money(abs(pl))} ({pct:+.2f}%)
-                    <span class="sub">Open P/L · {sub}</span></div>""",
-                unsafe_allow_html=True)
-        else:
-            st.markdown(
-                f"""<div class="rt-label">Anchor price · {anchor}</div>
-                <div class="rt-value">{money(prices['close'].iloc[-1])}</div>
-                <div class="rt-delta"><span class="sub">Add Alpaca keys to .env for live portfolio value</span></div>""",
-                unsafe_allow_html=True)
-    with right:
-        bp = f"<div class='bp'>Buying power <b>{money(acct.buying_power)}</b></div>" if acct else ""
-        st.markdown(
-            f"""<div class="rt-right">
-                <div class="rt-pill" style="--c:{c}; --c-soft:{c}1f; --c-line:{c}3d">
-                    <span class="swatch"></span>{regime.upper()}
-                    <span class="conf">{conf:.0%}</span>
-                </div>{bp}
-            </div>""", unsafe_allow_html=True)
+    if acct:
+        pl = live["open_pl"]
+        base = acct.equity - pl
+        plpct = (pl / base * 100) if base else 0.0
+        cls = "up" if pl >= 0 else "down"
+        port_v = money(acct.equity)
+        port_d = (f"<div class='d {cls}'>{'▲' if pl>=0 else '▼'} {money(abs(pl))} "
+                  f"({plpct:+.2f}%)</div><div class='d sub'>Open P/L · {live['positions']} positions</div>")
+    else:
+        port_v, port_d = "—", "<div class='d sub'>Connect Alpaca in .env</div>"
 
-    # --- price chart + regime ribbon --------------------------------------
-    st.plotly_chart(price_chart(prices), use_container_width=True,
+    try:
+        b_regime, gross, rows = load_basket()
+    except Exception as exc:
+        b_regime, gross, rows = regime, 0.0, []
+
+    reg_tile = tile("Detected regime",
+                    f"<span style='color:{rc}'>{regime.upper()}</span>",
+                    f"<div class='d sub'>{conf:.0%} confidence</div>")
+    exp_tile = tile("Basket exposure", f"{gross:.0%}",
+                    f"<div class='d sub'>{max(0,1-gross):.0%} cash · {len(rows)} names</div>")
+    spy_cls = "up" if spy_chg >= 0 else "down"
+    spy_tile = tile(f"{anchor} (S&P 500)", money(spy_px),
+                    f"<div class='d {spy_cls}'>{'▲' if spy_chg>=0 else '▼'} {abs(spy_chg):.2f}%</div>")
+    st.markdown("<div class='yf-tiles'>" + tile("Portfolio value", port_v, port_d)
+                + reg_tile + exp_tile + spy_tile + "</div>", unsafe_allow_html=True)
+
+    # --- price chart ---
+    st.markdown(f"<div class='yf-h'>{anchor} price <span class='sub'>2-year history · "
+                f"shaded by detected regime</span></div>", unsafe_allow_html=True)
+    st.plotly_chart(price_chart(prices, series), use_container_width=True,
                     config={"displayModeBar": False})
     st.plotly_chart(regime_ribbon(prices, series), use_container_width=True,
                     config={"displayModeBar": False})
     present = [r for r in REGIME_COLORS if (series["canonical"] == r).any()]
-    st.markdown(
-        "<div class='rt-legend'>" + "".join(
-            f"<span><i style='background:{REGIME_COLORS[r]}'></i>{r}</span>" for r in present
-        ) + "</div>", unsafe_allow_html=True)
+    st.markdown("<div class='yf-legend'>" + "".join(
+        f"<span><i style='background:{REGIME_COLORS[r]}'></i>{r}</span>" for r in present)
+        + "</div>", unsafe_allow_html=True)
 
-    # --- confidence + distribution ----------------------------------------
-    a, b = st.columns(2, gap="large")
-    with a:
-        st.markdown("<div class='rt-section'>Confidence</div>", unsafe_allow_html=True)
-        st.plotly_chart(mini_line(series["confidence"], c), use_container_width=True,
-                        config={"displayModeBar": False})
-    with b:
-        st.markdown("<div class='rt-section'>Days in each regime</div>", unsafe_allow_html=True)
-        counts = series["canonical"].value_counts()
-        bar = go.Figure(go.Bar(
-            x=counts.index, y=counts.values,
-            marker_color=[REGIME_COLORS.get(r, MUTED) for r in counts.index],
-            hovertemplate="%{x}: %{y} days<extra></extra>"))
-        bar.update_layout(height=150, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                          margin=dict(l=0, r=0, t=6, b=0), showlegend=False,
-                          font=dict(family=FONT, color=MUTED))
-        bar.update_xaxes(showgrid=False, tickfont=dict(size=11), color=MUTED)
-        bar.update_yaxes(visible=False)
-        st.plotly_chart(bar, use_container_width=True, config={"displayModeBar": False})
+    # --- target basket watchlist ---
+    st.markdown(f"<div class='yf-h'>Target basket <span class='sub'>momentum + regime + vol target · "
+                f"regime {b_regime} · {gross:.0%} invested</span></div>", unsafe_allow_html=True)
+    if not rows:
+        st.markdown("<div class='yf-list'><div class='yf-empty'>Basket unavailable.</div></div>",
+                    unsafe_allow_html=True)
+    else:
+        maxw = max((r["weight"] for r in rows), default=1) or 1
+        head = ("<div class='yf-head'><div>Symbol</div><div>Trend</div>"
+                "<div class='r'>Price · 1d</div><div class='r wtcol'>Target weight</div></div>")
+        body = []
+        for r in rows:
+            col = UP if r["chg"] >= 0 else DOWN
+            badge_bg = "rgba(21,199,132,0.14)" if r["chg"] >= 0 else "rgba(240,97,109,0.14)"
+            wbar = (r["weight"] / maxw * 100) if r["weight"] else 0
+            body.append(
+                f"""<div class="yf-row">
+                  <div><div class="sym">{r['ticker']}</div><div class="co">{r['name']}</div></div>
+                  <div>{sparkline(r['spark'], col)}</div>
+                  <div class="px">{money(r['price'])}<br>
+                    <span class="yf-badge" style="color:{col};background:{badge_bg}">{pct(r['chg']*100)}</span></div>
+                  <div class="yf-wt wtcol"><div class="track"><div class="fill" style="width:{wbar:.0f}%"></div></div>
+                    <span class="pct">{r['weight']:.1%}</span></div>
+                </div>""")
+        st.markdown(f"<div class='yf-list'>{head}{''.join(body)}</div>", unsafe_allow_html=True)
+        if gross <= 0:
+            st.caption("Regime is risk-off → the bot holds cash. Names above are the current "
+                       "momentum leaders it would buy when the regime turns risk-on.")
 
-    # --- risk controls -----------------------------------------------------
-    st.markdown("<div class='rt-section'>Risk controls</div>", unsafe_allow_html=True)
-    rc = settings.get("risk", {})
-    blocked = (PROJECT_ROOT / rc.get("block_file", "TRADING_BLOCKED")).exists()
-    kill_v = (f"<span style='color:{DOWN}'>Blocked</span>" if blocked
-              else f"<span style='color:{UP}'>Armed</span>")
-    tiles = [
-        ("Kill switch", kill_v),
-        ("Daily flatten", f"-{rc.get('daily_loss_flatten', 0.03):.0%}"),
-        ("Max drawdown stop", f"-{rc.get('max_drawdown_stop', 0.10):.0%}"),
-        ("Max leverage", f"{rc.get('max_leverage', 1.25):.2f}x"),
-    ]
-    st.markdown(
-        "<div class='rt-tiles'>" + "".join(
-            f"<div class='rt-tile'><div class='k'>{k}</div><div class='v'>{v}</div></div>"
-            for k, v in tiles
-        ) + "</div>", unsafe_allow_html=True)
+    # --- risk controls ---
+    st.markdown("<div class='yf-h'>Risk controls</div>", unsafe_allow_html=True)
+    rcfg = s.get("risk", {})
+    blocked = (PROJECT_ROOT / rcfg.get("block_file", "TRADING_BLOCKED")).exists()
+    kill = f"<span class='down'>Blocked</span>" if blocked else f"<span class='up'>Armed</span>"
+    tiles = [("Kill switch", kill, ""), ("Daily flatten", f"-{rcfg.get('daily_loss_flatten',0.03):.0%}", ""),
+             ("Max drawdown stop", f"-{rcfg.get('max_drawdown_stop',0.10):.0%}", ""),
+             ("Max leverage", f"{rcfg.get('max_leverage',1.5):.2f}x", "")]
+    st.markdown("<div class='yf-tile-row'>" + "".join(tile(k, v, d) for k, v, d in tiles)
+                + "</div>", unsafe_allow_html=True)
 
-    # --- signal feed -------------------------------------------------------
-    st.markdown("<div class='rt-section'>Signal feed</div>", unsafe_allow_html=True)
+    # --- signal feed ---
+    st.markdown("<div class='yf-h'>Signal feed</div>", unsafe_allow_html=True)
     feed = read_signal_feed()
     if not feed:
-        st.markdown(
-            "<div class='rt-feed'><div class='rt-empty'>No activity yet. "
-            "Run <code>python -m regime_trader.main run --once</code> to generate signals.</div></div>",
-            unsafe_allow_html=True)
+        st.markdown("<div class='yf-list'><div class='yf-empty'>No activity yet. Run "
+                    "<code>python -m regime_trader.main portfolio --once</code> to generate signals."
+                    "</div></div>", unsafe_allow_html=True)
     else:
-        rows = []
+        body = []
         for ev in feed:
             kind = ev.get("event")
             if kind == "order":
                 side = str(ev.get("side", "")).upper()
                 col = UP if side == "BUY" else DOWN
-                ic = "▲" if side == "BUY" else "▼"
                 title = f"{side} {ev.get('qty','')} {ev.get('symbol','')}"
+            elif kind == "rebalance":
+                col, title = TEAL, f"Rebalance · regime {ev.get('regime','')}"
             elif kind == "regime_change":
-                col = REGIME_COLORS.get(ev.get("regime", ""), MUTED)
-                ic, title = "R", f"Regime -> {ev.get('regime','')}"
+                col, title = REGIME_COLORS.get(ev.get("regime", ""), MUTED), f"Regime → {ev.get('regime','')}"
             else:
-                col, ic, title = MUTED, "•", "Risk check"
+                col, title = MUTED, "Risk check"
             ts = str(ev.get("ts", ""))[:19].replace("T", " ")
-            rows.append(
-                f"""<div class="rt-row">
-                    <div class="ic" style="background:{col}22;color:{col}">{ic}</div>
-                    <div class="body"><div class="t">{title}</div>
-                        <div class="s">{ev.get('msg','')}</div></div>
-                    <div class="when">{ts}</div></div>""")
-        st.markdown("<div class='rt-feed'>" + "".join(rows) + "</div>", unsafe_allow_html=True)
+            body.append(
+                f"""<div class="yf-row" style="grid-template-columns:auto 1fr auto">
+                  <div style="width:6px;height:30px;border-radius:3px;background:{col}"></div>
+                  <div><div class="sym" style="font-size:.9rem">{title}</div>
+                    <div class="co">{ev.get('msg','')}</div></div>
+                  <div class="co">{ts}</div></div>""")
+        st.markdown(f"<div class='yf-list'>{''.join(body)}</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
