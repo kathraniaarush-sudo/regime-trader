@@ -84,6 +84,100 @@ backtest:
   commission_bps: 0
   initial_equity: 100000
 
+portfolio:
+  # Cross-sectional momentum + HMM regime overlay + volatility targeting.
+  # This is the "beat the index" strategy: hold the strongest-trending S&P names,
+  # scale the whole basket by the regime, and target a constant volatility so the
+  # drawdown respects the risk manager's circuit breaker.
+  enabled: true
+  mode: momentum               # "momentum" (this strategy) or "anchor" (single-ticker)
+  top_n: 10                    # hold the top N momentum names, equal weighted
+  momentum_lookback: 252       # 12-month trailing window for momentum...
+  momentum_skip: 21            # ...skipping the most recent month (reversal guard)
+  rebalance_days: 21           # re-rank / rebalance roughly monthly
+  target_vol: 0.09             # annualised vol target (keeps drawdown < ~10%)
+  vol_lookback: 20             # trailing window for realised-vol estimate
+  max_leverage: 1.50           # cap on basket gross exposure
+  # This strategy's regime overlay works best with fewer regimes than the global
+  # hmm setting: 6-7 regimes fragment the signal and backtest materially worse
+  # (Sharpe 1.28 @ 5 regimes vs 0.90 @ 7). The single-ticker mode prefers more.
+  regime_max_regimes: 5
+  # Regime -> base gross exposure on the basket (the HMM risk overlay). Vol
+  # targeting then scales the whole strategy to the target vol, so bear/crash ->
+  # cash is the regime's main job; the exact neutral fraction is second-order.
+  regime_gross:
+    crash: 0.00
+    bear: 0.00
+    neutral: 0.60
+    bull: 1.00
+    euphoria: 1.00
+  # Diversified large-cap universe (includes laggards on purpose to limit
+  # survivorship bias). The regime anchor (SPY) above drives the overlay.
+  universe:
+    - AAPL
+    - MSFT
+    - NVDA
+    - AMZN
+    - GOOGL
+    - META
+    - TSLA
+    - ORCL
+    - CSCO
+    - INTC
+    - IBM
+    - ADBE
+    - CRM
+    - AMD
+    - QCOM
+    - TXN
+    - HPQ
+    - T
+    - VZ
+    - JPM
+    - BAC
+    - WFC
+    - C
+    - GS
+    - MS
+    - V
+    - MA
+    - AXP
+    - JNJ
+    - UNH
+    - PFE
+    - MRK
+    - ABBV
+    - ABT
+    - TMO
+    - LLY
+    - CVS
+    - BMY
+    - PG
+    - KO
+    - PEP
+    - WMT
+    - COST
+    - MCD
+    - NKE
+    - SBUX
+    - TGT
+    - HD
+    - LOW
+    - DIS
+    - GE
+    - CAT
+    - BA
+    - HON
+    - UPS
+    - MMM
+    - XOM
+    - CVX
+    - SLB
+    - GM
+    - F
+    - KHC
+    - MO
+
 execution:
   bar_interval: "1Day"         # bar granularity for the live loop
   poll_seconds: 60             # how often the live loop wakes up

@@ -52,6 +52,34 @@ def get_history(symbol: str, lookback_days: int = 504, interval: str = "1d") -> 
     return df.tail(lookback_days)
 
 
+def get_histories(symbols, lookback_days: int = 504, interval: str = "1d") -> pd.DataFrame:
+    """Close prices for many symbols as one frame (columns = tickers).
+
+    Used by the portfolio strategy for momentum ranking and vol estimation.
+    Drops the incomplete current-day bar, like get_history.
+    """
+    import yfinance as yf
+
+    symbols = list(dict.fromkeys(symbols))  # dedupe, preserve order
+    period_days = int(lookback_days * 1.6) + 60
+    raw = yf.download(symbols, period=f"{period_days}d", interval=interval,
+                      auto_adjust=True, progress=False)
+    if raw is None or raw.empty:
+        raise RuntimeError("No history returned for the requested symbols")
+
+    if isinstance(raw.columns, pd.MultiIndex):
+        closes = raw["Close"].copy()
+    else:  # single symbol -> flat columns
+        closes = raw[["Close"]].rename(columns={"Close": symbols[0]})
+    closes.index = pd.to_datetime(closes.index)
+
+    if interval.endswith("d"):
+        today = pd.Timestamp.now().normalize()
+        closes = closes[closes.index.normalize() < today]
+
+    return closes.dropna(how="all").tail(lookback_days)
+
+
 class MarketData:
     """Live price helper backed by Alpaca's data API."""
 
