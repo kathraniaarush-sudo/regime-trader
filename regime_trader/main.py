@@ -203,11 +203,45 @@ def _cmd_backtest(bot: TradingBot) -> None:
           f"maxDD={stressed.max_drawdown:.2%}")
 
 
+def _cmd_portfolio_backtest() -> None:
+    from regime_trader.backtest.portfolio_backtester import PortfolioBacktester
+    from regime_trader.broker.market_data import get_histories
+    s = load_settings()
+    p = s.get("portfolio", {})
+    anchor = s.get("universe.regime_anchor", "SPY")
+    universe = list(p.get("universe", []))
+    print(f"Fetching {len(universe)} names + {anchor}...")
+    closes = get_histories(universe + [anchor], lookback_days=1500).dropna(axis=1)
+    bt = PortfolioBacktester(s.get("hmm", {}), p, s.get("backtest", {}))
+    res = bt.run(closes, anchor=anchor)
+    m, b = res.metrics, res.benchmark
+    halt = "  BREACHES -10% breaker" if m.max_drawdown < -0.10 else "  within breaker"
+    print(f"\n=== Momentum + HMM + vol-target ({res.n_rebalances} rebalances) ===")
+    print(f"Total return : {m.total_return:+.1%}   (SPY {b.total_return:+.1%})")
+    print(f"Sharpe       : {m.sharpe:.2f}   (SPY {b.sharpe:.2f})")
+    print(f"Max drawdown : {m.max_drawdown:.1%}   (SPY {b.max_drawdown:.1%}){halt}")
+    print(f"30-day win rate vs SPY : {res.win_rate_30d:.0%}")
+    print("\nSurvivorship caveat applies; treat as plausible, not guaranteed.")
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description="Regime Trader")
-    parser.add_argument("command", choices=["status", "backtest", "run"], nargs="?", default="status")
+    parser.add_argument(
+        "command", nargs="?", default="status",
+        choices=["status", "backtest", "run", "portfolio", "portfolio-backtest"],
+    )
     parser.add_argument("--once", action="store_true", help="run a single loop iteration and exit")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="portfolio: print the rebalance plan without sending orders")
     args = parser.parse_args(argv)
+
+    if args.command == "portfolio-backtest":
+        _cmd_portfolio_backtest()
+        return
+    if args.command == "portfolio":
+        from regime_trader.portfolio_trader import PortfolioTrader
+        PortfolioTrader().run(once=args.once, dry_run=args.dry_run)
+        return
 
     bot = TradingBot()
     if args.command == "status":
