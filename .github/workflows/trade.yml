@@ -14,7 +14,12 @@ on:
     - cron: "0 16 * * 1-5"
     - cron: "0 18 * * 1-5"
     - cron: "45 19 * * 1-5"
-  workflow_dispatch: {}   # manual "Run workflow" button for testing
+  workflow_dispatch:      # manual "Run workflow" button
+    inputs:
+      force:
+        description: "Force a rebalance now (ignore the monthly cadence)"
+        type: boolean
+        default: false
 
 # Never let two runs trade at once (they'd race on the cached state).
 concurrency:
@@ -52,7 +57,7 @@ jobs:
       - name: Run one trading iteration
         run: |
           mkdir -p state   # ensure the cache path exists even on a no-op run
-          python -m regime_trader.main portfolio --once
+          python -m regime_trader.main portfolio --once ${{ inputs.force && '--force' || '' }}
 
       # Save the updated state for the next run.
       - name: Save bot state

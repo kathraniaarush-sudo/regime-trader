@@ -186,6 +186,14 @@ class PortfolioTrader:
             self._print_plan(basket, weights, orders, equity)
             return orders
 
+        # Cancel any still-open orders first. The plan was diffed against FILLED
+        # positions only, so without this a run that fires while previous orders
+        # are still queued (e.g. market closed) would stack a duplicate basket.
+        try:
+            self.executor.cancel_all()
+        except Exception as exc:
+            logger.warning("cancel_all before rebalance failed: %s", exc)
+
         for sym, side, qty in orders:
             try:
                 self.executor.submit_market_order(sym, qty, side)
@@ -243,7 +251,7 @@ class PortfolioTrader:
         return elapsed >= self.rebalance_days
 
     # -------------------------------------------------------------- loop
-    def run(self, once: bool = False, dry_run: bool = False) -> None:
+    def run(self, once: bool = False, dry_run: bool = False, force: bool = False) -> None:
         if not self.connect():
             return
         poll = self.settings.get("execution.poll_seconds", 60)
@@ -254,8 +262,10 @@ class PortfolioTrader:
                 now = datetime.now(timezone.utc)
                 equity = self.client.get_account().equity
                 decision = self.risk.evaluate(equity, now)
-                # React to breakers every tick; only re-rank on the cadence.
-                if decision.halted or decision.flatten_all or self._due_for_rebalance(now) or dry_run:
+                # React to breakers every tick; only re-rank on the cadence
+                # (or immediately when forced).
+                if (decision.halted or decision.flatten_all or force
+                        or self._due_for_rebalance(now) or dry_run):
                     self.rebalance(dry_run=dry_run)
                 else:
                     logger.info("No rebalance due (equity %.0f). Next in <= %dd.",

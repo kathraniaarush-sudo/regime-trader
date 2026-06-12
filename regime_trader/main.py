@@ -233,6 +233,8 @@ def main(argv=None) -> None:
     parser.add_argument("--once", action="store_true", help="run a single loop iteration and exit")
     parser.add_argument("--dry-run", action="store_true",
                         help="portfolio: print the rebalance plan without sending orders")
+    parser.add_argument("--force", action="store_true",
+                        help="portfolio: force a rebalance now, ignoring the cadence")
     args = parser.parse_args(argv)
 
     if args.command == "portfolio-backtest":
@@ -240,7 +242,7 @@ def main(argv=None) -> None:
         return
     if args.command == "portfolio":
         from regime_trader.portfolio_trader import PortfolioTrader
-        PortfolioTrader().run(once=args.once, dry_run=args.dry_run)
+        PortfolioTrader().run(once=args.once, dry_run=args.dry_run, force=args.force)
         return
 
     bot = TradingBot()
