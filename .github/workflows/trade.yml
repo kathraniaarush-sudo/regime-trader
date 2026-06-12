@@ -50,7 +50,9 @@ jobs:
           restore-keys: rt-state-
 
       - name: Run one trading iteration
-        run: python -m regime_trader.main portfolio --once
+        run: |
+          mkdir -p state   # ensure the cache path exists even on a no-op run
+          python -m regime_trader.main portfolio --once
 
       # Save the updated state for the next run.
       - name: Save bot state
