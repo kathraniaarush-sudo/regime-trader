@@ -221,8 +221,12 @@ class PortfolioTrader:
 
     def _save_state(self, basket: TargetBasket) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        existing = self._load_state()
+        now = datetime.now(timezone.utc).isoformat()
         self.state_path.write_text(json.dumps({
-            "last_rebalance": datetime.now(timezone.utc).isoformat(),
+            # Set once on the first rebalance; marks the start of the challenge.
+            "challenge_start": existing.get("challenge_start") or existing.get("last_rebalance") or now,
+            "last_rebalance": now,
             "regime": basket.regime,
             "weights": {k: round(v, 4) for k, v in basket.weights.items()},
         }, indent=2))
