@@ -191,8 +191,21 @@ def load_challenge(anchor: str):
                101.4, 101.1, 101.5, 100.9, 101.10]
         return pd.Series(you, index=idx), pd.Series(spy, index=idx)
 
-    state_path = PROJECT_ROOT / "state" / "portfolio_state.json"
+    try:
+        from regime_trader.broker.alpaca_client import AlpacaClient
+        client = AlpacaClient()
+        if not client.is_configured:
+            return None
+    except Exception:
+        return None
+
+    # Challenge start, in order of preference:
+    #   1. local trader state file (set on the first rebalance)
+    #   2. CHALLENGE_START env / Streamlit secret
+    #   3. the date of the oldest Alpaca order (works on Streamlit Cloud, which
+    #      has no local state file)
     start = None
+    state_path = PROJECT_ROOT / "state" / "portfolio_state.json"
     if state_path.exists():
         try:
             st_ = json.loads(state_path.read_text())
@@ -200,12 +213,19 @@ def load_challenge(anchor: str):
         except json.JSONDecodeError:
             pass
     if not start:
+        start = os.getenv("CHALLENGE_START")
+    if not start:
+        try:
+            oldest = client.get("/v2/orders",
+                                params={"status": "all", "direction": "asc", "limit": 1})
+            if oldest:
+                start = oldest[0].get("submitted_at") or oldest[0].get("created_at")
+        except Exception:
+            pass
+    if not start:
         return None
+
     try:
-        from regime_trader.broker.alpaca_client import AlpacaClient
-        client = AlpacaClient()
-        if not client.is_configured:
-            return None
         h = client.get("/v2/account/portfolio/history",
                        params={"period": "1M", "timeframe": "1D", "extended_hours": "false"})
     except Exception:
