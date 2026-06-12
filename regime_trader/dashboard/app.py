@@ -180,6 +180,17 @@ def load_challenge(anchor: str):
     start recorded in the trader state. Returns (bot, spy) normalised series or
     None if the challenge hasn't produced two data points yet.
     """
+    # Demo mode: RT_DEMO_CHALLENGE=1 feeds the scoreboard sample data so you can
+    # preview the populated state before a real trading day has completed.
+    import os
+    if os.getenv("RT_DEMO_CHALLENGE"):
+        idx = pd.bdate_range(end=pd.Timestamp.today().normalize(), periods=15)
+        you = [100, 100.3, 99.8, 100.6, 101.1, 100.7, 101.5, 102.1, 101.7, 102.3,
+               102.9, 102.5, 103.1, 102.2, 102.34]
+        spy = [100, 100.1, 99.6, 100.0, 100.4, 100.2, 100.7, 101.1, 100.6, 101.0,
+               101.4, 101.1, 101.5, 100.9, 101.10]
+        return pd.Series(you, index=idx), pd.Series(spy, index=idx)
+
     state_path = PROJECT_ROOT / "state" / "portfolio_state.json"
     start = None
     if state_path.exists():
