@@ -1,0 +1,61 @@
+name: Trade (paper)
+
+# Runs the portfolio bot on a schedule so it trades without your laptop.
+# Your Alpaca keys come from repository Secrets (Settings -> Secrets and
+# variables -> Actions). See deploy/CLOUD.md for setup.
+
+on:
+  schedule:
+    # US market hours, Mon-Fri (UTC). ~10:00 / 12:00 / 14:00 / 15:45 ET in summer.
+    # GitHub cron is UTC and does not adjust for DST; in winter these shift ~1h
+    # earlier in ET (still inside the session). Cron can also be delayed a few
+    # minutes — fine for a daily strategy.
+    - cron: "0 14 * * 1-5"
+    - cron: "0 16 * * 1-5"
+    - cron: "0 18 * * 1-5"
+    - cron: "45 19 * * 1-5"
+  workflow_dispatch: {}   # manual "Run workflow" button for testing
+
+# Never let two runs trade at once (they'd race on the cached state).
+concurrency:
+  group: trade
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
+      ALPACA_PAPER: ${{ secrets.ALPACA_PAPER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Restore the bot's state (last rebalance date, challenge start) from the
+      # previous run. Miss falls back to the most recent rt-state-* cache.
+      - name: Restore bot state
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: rt-state-${{ github.run_id }}
+          restore-keys: rt-state-
+
+      - name: Run one trading iteration
+        run: python -m regime_trader.main portfolio --once
+
+      # Save the updated state for the next run.
+      - name: Save bot state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: rt-state-${{ github.run_id }}
