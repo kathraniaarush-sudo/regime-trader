@@ -41,11 +41,11 @@ strategy:
       leverage: 1.00
       direction: flat
     bear:
-      gross_exposure: 0.25
+      gross_exposure: 0.00
       leverage: 1.00
-      direction: long
+      direction: flat
     neutral:
-      gross_exposure: 0.50
+      gross_exposure: 0.40
       leverage: 1.00
       direction: long
     bull:
@@ -59,7 +59,8 @@ strategy:
   # Only rebalance when target weight drifts more than this from current weight.
   rebalance_threshold: 0.05
   # Scale exposure by HMM confidence (posterior prob of the active regime).
-  confidence_scaling: true
+  # Disabled: the sweep showed it cut returns more than it cut risk, lowering Sharpe.
+  confidence_scaling: false
   min_confidence: 0.50
 
 risk:
