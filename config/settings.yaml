@@ -94,12 +94,13 @@ portfolio:
   top_n: 10                    # hold the top N momentum names, equal weighted
   momentum_lookback: 252       # 12-month trailing window for momentum...
   momentum_skip: 21            # ...skipping the most recent month (reversal guard)
-  # "Trend-quality" selection upgrades. Default off until the backtest proves
-  # them out (then flip on). See scripts/strategy_ablation.py.
-  risk_adjusted_momentum: false  # A2: rank by return / volatility, not raw return
-  trend_filter: false            # A3: only hold names above their own trend_ma average
+  # Selection signal. A2 (risk-adjusted momentum) is ON: the ablation showed it
+  # improves the de-biased Sharpe and roughly halves drawdown, while A3/B1 did not
+  # earn their place (they diluted A2), so they stay off. See scripts/strategy_ablation.py.
+  risk_adjusted_momentum: true   # A2: rank by return / volatility, not raw return
+  trend_filter: false            # A3: not adopted (no risk-adjusted improvement)
   trend_ma: 200
-  weighting: equal               # B1: "equal" or "inverse_vol" basket weighting
+  weighting: equal               # B1: not adopted ("equal" vs "inverse_vol")
   vol_weight_lookback: 60
   rebalance_days: 21           # re-rank / rebalance roughly monthly
   daily_derisk: true           # between rebalances, go to cash same-day if the
