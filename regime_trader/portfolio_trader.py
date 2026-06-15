@@ -67,6 +67,9 @@ class PortfolioTrader:
             lookback=p.get("momentum_lookback", 252),
             skip=p.get("momentum_skip", 21),
             top_n=p.get("top_n", 10),
+            risk_adjusted=p.get("risk_adjusted_momentum", False),
+            trend_filter=p.get("trend_filter", False),
+            trend_ma=p.get("trend_ma", 200),
         )
         self.constructor = PortfolioConstructor(
             top_n=p.get("top_n", 10),
@@ -74,6 +77,8 @@ class PortfolioTrader:
             target_vol=p.get("target_vol", 0.09),
             vol_lookback=self.vol_lookback,
             max_leverage=p.get("max_leverage", 1.5),
+            weighting=p.get("weighting", "equal"),
+            vol_weight_lookback=p.get("vol_weight_lookback", 60),
         )
         # This strategy's overlay uses its own regime granularity (see config).
         self._hmm_cfg = dict(s.get("hmm", {}))
@@ -132,7 +137,7 @@ class PortfolioTrader:
             logger.warning("regime detection failed (%s); treating as neutral", exc)
             regime = "neutral"
 
-        base = self.constructor.base_weights(selected, regime)
+        base = self.constructor.base_weights(selected, regime, closes[stocks])
         if not base:
             return TargetBasket(regime, selected, {})
 

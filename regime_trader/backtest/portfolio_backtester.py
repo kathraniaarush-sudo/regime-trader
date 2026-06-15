@@ -46,6 +46,9 @@ class PortfolioBacktester:
             lookback=portfolio_cfg.get("momentum_lookback", 252),
             skip=portfolio_cfg.get("momentum_skip", 21),
             top_n=portfolio_cfg.get("top_n", 10),
+            risk_adjusted=portfolio_cfg.get("risk_adjusted_momentum", False),
+            trend_filter=portfolio_cfg.get("trend_filter", False),
+            trend_ma=portfolio_cfg.get("trend_ma", 200),
         )
         self.constructor = PortfolioConstructor(
             top_n=portfolio_cfg.get("top_n", 10),
@@ -53,6 +56,8 @@ class PortfolioBacktester:
             target_vol=portfolio_cfg.get("target_vol", 0.09),
             vol_lookback=portfolio_cfg.get("vol_lookback", 20),
             max_leverage=portfolio_cfg.get("max_leverage", 1.5),
+            weighting=portfolio_cfg.get("weighting", "equal"),
+            vol_weight_lookback=portfolio_cfg.get("vol_weight_lookback", 60),
         )
         self.rebalance_days = portfolio_cfg.get("rebalance_days", 21)
         self.train_window = self.hmm_cfg.get("train_lookback_days", 504)
@@ -100,7 +105,7 @@ class PortfolioBacktester:
             sub = closes.iloc[: i + 1]
             selected = self.ranker.select(sub[stocks])
             regime = self._regime_at(anchor_prices.iloc[max(0, i - self.train_window - 80): i + 1])
-            base = self.constructor.base_weights(selected, regime)
+            base = self.constructor.base_weights(selected, regime, sub[stocks])
             weights.iloc[i] = 0.0
             for ticker, w in base.items():
                 weights.iloc[i, weights.columns.get_loc(ticker)] = w

@@ -54,6 +54,8 @@ class PortfolioConstructor:
     target_vol: float = 0.09
     vol_lookback: int = 20
     max_leverage: float = 1.5
+    weighting: str = "equal"          # "equal" or "inverse_vol" (B1)
+    vol_weight_lookback: int = 60     # window for the inverse-vol weights
 
     def __post_init__(self):
         self.regime_gross = {**_DEFAULT_GROSS, **(self.regime_gross or {})}
@@ -61,13 +63,24 @@ class PortfolioConstructor:
     def gross_for(self, regime: str) -> float:
         return float(self.regime_gross.get(canonical(regime), 0.5))
 
-    def base_weights(self, selected: list[str], regime: str) -> dict[str, float]:
-        """Regime-overlaid equal weights, before vol targeting. {} = all cash."""
+    def _intra_weights(self, selected: list[str], closes) -> dict[str, float]:
+        """How to split the basket across names (sums to 1). Equal, or inverse
+        volatility so calmer names carry more weight."""
+        if self.weighting == "inverse_vol" and closes is not None:
+            vol = closes[selected].pct_change().tail(self.vol_weight_lookback).std()
+            inv = (1.0 / vol.replace(0, np.nan)).dropna()
+            if not inv.empty and inv.sum() > 0:
+                norm = inv / inv.sum()
+                return {t: float(norm.get(t, 0.0)) for t in selected}
+        return {t: 1.0 / len(selected) for t in selected}
+
+    def base_weights(self, selected: list[str], regime: str, closes=None) -> dict[str, float]:
+        """Regime-overlaid weights, before vol targeting. {} = all cash."""
         gross = self.gross_for(regime)
         if gross <= 0 or not selected:
             return {}
-        w = gross / len(selected)
-        return {ticker: w for ticker in selected}
+        intra = self._intra_weights(selected, closes)
+        return {t: gross * w for t, w in intra.items() if w > 0}
 
     def vol_scalar(self, strategy_returns: pd.Series) -> float:
         """Vol-target multiplier from the strategy's own recent returns."""
