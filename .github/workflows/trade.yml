@@ -6,14 +6,14 @@ name: Trade (paper)
 
 on:
   schedule:
-    # US market hours, Mon-Fri (UTC). ~10:00 / 12:00 / 14:00 / 15:45 ET in summer.
-    # GitHub cron is UTC and does not adjust for DST; in winter these shift ~1h
-    # earlier in ET (still inside the session). Cron can also be delayed a few
-    # minutes — fine for a daily strategy.
-    - cron: "0 14 * * 1-5"
-    - cron: "0 16 * * 1-5"
-    - cron: "0 18 * * 1-5"
-    - cron: "45 19 * * 1-5"
+    # Every 30 min during US market hours, Mon-Fri. Cron is UTC; the 13:30-21:00
+    # window covers 9:30am-4:00pm ET in summer (EDT) and most of the session in
+    # winter (EST). GitHub may delay/skip crons a few minutes under load. The
+    # regime only changes once per day (completed bars) — this cadence is mainly
+    # for fast circuit-breaker response to intraday drawdowns.
+    - cron: "30 13 * * 1-5"
+    - cron: "0,30 14-20 * * 1-5"
+    - cron: "0 21 * * 1-5"
   workflow_dispatch:      # manual "Run workflow" button
     inputs:
       force:
