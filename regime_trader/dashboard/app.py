@@ -203,17 +203,22 @@ def load_basket():
     stocks = [c for c in closes.columns if c != pt.anchor]
     b = pt.compute_target(closes)
 
-    # Momentum scores across the whole universe -> the selection rationale.
+    # Rank reflects the actual selection score (risk-adjusted if A2 is on); the
+    # displayed momentum is the plain trailing 12-1 return, which reads cleanly.
     scores = pt.ranker.scores(closes[stocks]).dropna().sort_values(ascending=False)
     rank_of = {sym: i + 1 for i, sym in enumerate(scores.index)}
+    lb, sk = pt.ranker.lookback, pt.ranker.skip
+    raw_ret = (closes[stocks].iloc[-1 - sk] / closes[stocks].iloc[-1 - lb] - 1) \
+        if len(closes) > lb else None
 
     rows = []
     for t in b.selected:
         s = closes[t].dropna()
         chg = float(s.iloc[-1] / s.iloc[-2] - 1) if len(s) > 1 else 0.0
+        mom = float(raw_ret.get(t, 0.0)) if raw_ret is not None else 0.0
         rows.append({"ticker": t, "name": NAMES.get(t, t), "weight": float(b.weights.get(t, 0.0)),
                      "price": float(s.iloc[-1]), "chg": chg, "spark": s.tail(30).tolist(),
-                     "momentum": float(scores.get(t, 0.0)), "rank": rank_of.get(t, 0)})
+                     "momentum": mom, "rank": rank_of.get(t, 0)})
     return b.regime, sum(b.weights.values()), rows, len(stocks)
 
 
@@ -596,9 +601,10 @@ def main():
         each = (gross / len(rows)) if rows else 0
         st.markdown(
             f"<div style='color:{MUTED};font-size:.84rem;line-height:1.6;margin:-.2rem 0 .8rem'>"
-            f"<b style='color:{TEXT}'>Why these names:</b> the {len(rows)} strongest of {n_universe} "
-            f"S&amp;P stocks by <b>12-month momentum</b> (trailing return, skipping the last month to "
-            f"avoid short-term reversal). <b style='color:{TEXT}'>Why this size:</b> the <b>{b_regime}</b> "
+            f"<b style='color:{TEXT}'>Why these names:</b> the {len(rows)} strongest of our "
+            f"{n_universe}-stock S&amp;P large-cap watchlist by <b>risk-adjusted 12-month momentum</b> "
+            f"(trailing return per unit of volatility, skipping the last month). "
+            f"<b style='color:{TEXT}'>Why this size:</b> the <b>{b_regime}</b> "
             f"regime sets total exposure to <b>{gross:.0%}</b>, then volatility targeting equal-weights "
             f"them (~{each:.1%} each) so the basket runs near its risk target.</div>",
             unsafe_allow_html=True)
