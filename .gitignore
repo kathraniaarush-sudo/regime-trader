@@ -26,6 +26,7 @@ logs/*.jsonl
 *.parquet
 data/
 artifacts/
+design-extract-output/
 
 # OS / editor
 .DS_Store
