@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
@@ -421,6 +423,23 @@ def main():
         <div class="name">Regime Trader</div>
         <div class="status"><span class="dot" style="background:{dot}"></span>{status}</div></div>""",
         unsafe_allow_html=True)
+
+    # Freshness: the view updates on refresh, not live. Stamp when it loaded and
+    # how current the underlying data is, then offer an explicit refresh.
+    loaded = datetime.now(ZoneInfo("America/New_York"))
+    through = prices.index[-1].strftime("%b %-d, %Y")
+    fcol, bcol = st.columns([5, 1])
+    with fcol:
+        st.markdown(
+            f"<div style='color:{MUTED};font-size:.8rem;margin:-.4rem 0 1rem'>"
+            f"Updated <b style='color:{TEXT}'>{loaded.strftime('%b %-d, %-I:%M %p ET')}</b> · "
+            f"portfolio value live from Alpaca · market data through {through} (completed daily bars)"
+            f"</div>", unsafe_allow_html=True)
+    with bcol:
+        if st.button("↻ Refresh", use_container_width=True):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.rerun()
 
     # --- market summary tiles ---
     acct = live["account"]
