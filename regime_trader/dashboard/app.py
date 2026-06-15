@@ -27,17 +27,19 @@ from regime_trader.core.features import build_features
 from regime_trader.core.settings import PROJECT_ROOT, load_settings
 from regime_trader.broker.market_data import get_history
 
-# ----------------------------------------------------------- Yahoo-ish palette
-PAGE = "#0f1318"
-SURFACE = "#191e25"
-SURFACE2 = "#222933"
-BORDER = "#2b323c"
-TEXT = "#e7eaee"
-MUTED = "#98a1ac"
+# ------------------------------------------------- palette (layered for depth)
+PAGE = "#080b10"        # deepest: page background
+SHELL = "#0f141b"       # outer bezel "tray" around cards
+SURFACE = "#171d26"     # inner card "plate"
+SURFACE2 = "#212a35"    # tracks / hover lift
+BORDER = "#29323d"      # hairline
+HAIR = "rgba(255,255,255,0.06)"   # top-edge highlight (machined look)
+TEXT = "#eef1f5"
+MUTED = "#929caa"       # muted slate
 UP = "#15c784"          # gains
 DOWN = "#f0616d"        # losses
-TEAL = "#13b29a"        # brand accent (Yahoo Finance teal-green)
-FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+TEAL = "#16c4a8"        # brand accent (teal-green)
+FONT = "'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
 REGIME_COLORS = {
     "crash": "#b22a3a", "bear": "#f0616d", "neutral": "#8a93a0",
@@ -73,66 +75,99 @@ def inject_css() -> None:
     st.markdown(
         f"""
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-        .stApp {{ background:{PAGE}; }}
+        /* deep page with a faint top glow for spatial depth */
+        .stApp {{ background:
+            radial-gradient(1100px 480px at 78% -8%, rgba(22,196,168,0.07), transparent 60%),
+            radial-gradient(900px 420px at 10% -10%, rgba(60,90,160,0.06), transparent 55%),
+            {PAGE}; }}
         html, body, [data-testid="stAppViewContainer"], [class*="css"] {{
             font-family:{FONT}; color:{TEXT}; }}
         [data-testid="stHeader"] {{ background:transparent; }}
         #MainMenu, footer, [data-testid="stToolbar"] {{ visibility:hidden; }}
-        .block-container {{ max-width:1180px; padding-top:1.6rem; padding-bottom:4rem; }}
+        .block-container {{ max-width:1140px; padding-top:1.8rem; padding-bottom:5rem; }}
+        ::selection {{ background:rgba(22,196,168,0.28); }}
 
-        .yf-bar {{ display:flex; align-items:center; gap:.55rem; margin-bottom:1.4rem; }}
-        .yf-bar .mark {{ width:28px; height:28px; border-radius:7px;
-            background:{TEAL}; display:flex; align-items:center; justify-content:center;
-            color:#04201b; font-weight:800; font-size:16px; }}
-        .yf-bar .name {{ font-weight:700; font-size:1.02rem; }}
-        .yf-bar .status {{ margin-left:auto; font-size:.78rem; color:{MUTED}; font-weight:600;
-            display:flex; align-items:center; gap:.4rem; }}
-        .yf-bar .dot {{ width:8px; height:8px; border-radius:50%; }}
+        .yf-bar {{ display:flex; align-items:center; gap:.6rem; margin-bottom:.5rem; }}
+        .yf-bar .mark {{ width:30px; height:30px; border-radius:9px;
+            background:linear-gradient(150deg,{TEAL},#0c9c84); display:flex; align-items:center;
+            justify-content:center; color:#04201b; font-weight:800; font-size:16px;
+            box-shadow:inset 0 1px 0 rgba(255,255,255,0.4), 0 4px 14px -4px rgba(22,196,168,0.5); }}
+        .yf-bar .name {{ font-weight:800; font-size:1.06rem; letter-spacing:-.01em; }}
+        .yf-bar .status {{ margin-left:auto; font-size:.76rem; color:{MUTED}; font-weight:600;
+            display:flex; align-items:center; gap:.45rem; padding:.32rem .7rem; border-radius:999px;
+            background:{SHELL}; border:1px solid {BORDER}; }}
+        .yf-bar .dot {{ width:7px; height:7px; border-radius:50%; box-shadow:0 0 7px currentColor; }}
 
-        /* market summary tiles */
+        /* ---- Double-bezel: outer tray (shell) hugging an inner plate (core) ---- */
+        .yf-tile {{ background:{SHELL}; border:1px solid {BORDER}; border-radius:18px; padding:5px;
+            display:flex;
+            box-shadow:0 1px 1px rgba(0,0,0,0.5), 0 16px 34px -16px rgba(0,0,0,0.7);
+            transition:transform .5s cubic-bezier(.32,.72,0,1), box-shadow .5s cubic-bezier(.32,.72,0,1); }}
+        .yf-tile:hover {{ transform:translateY(-2px);
+            box-shadow:0 1px 1px rgba(0,0,0,0.5), 0 22px 44px -18px rgba(0,0,0,0.8); }}
+        .yf-core {{ flex:1; background:linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0));
+            background-color:{SURFACE}; border-radius:14px; padding:.95rem 1.05rem;
+            box-shadow:inset 0 1px 0 {HAIR}; }}
         .yf-tiles {{ display:grid; grid-template-columns:repeat(4,1fr); gap:.7rem; margin-bottom:.4rem; }}
-        .yf-tile {{ background:{SURFACE}; border:1px solid {BORDER}; border-radius:12px; padding:.85rem 1rem;
-            box-shadow:rgba(0,0,0,0.18) 0px 4px 12px 0px; }}
-        .yf-tile .k {{ color:{MUTED}; font-size:.72rem; font-weight:700; letter-spacing:.05em;
+        .yf-tile-row {{ display:grid; grid-template-columns:repeat(4,1fr); gap:.7rem; }}
+        .yf-tile .k {{ color:{MUTED}; font-size:.7rem; font-weight:700; letter-spacing:.12em;
             text-transform:uppercase; }}
-        .yf-tile .v {{ font-size:1.5rem; font-weight:800; margin-top:.3rem; letter-spacing:-.02em;
-            font-variant-numeric:tabular-nums; line-height:1.1; }}
-        .yf-tile .d {{ font-size:.82rem; font-weight:700; margin-top:.2rem; font-variant-numeric:tabular-nums; }}
+        .yf-tile .v {{ font-size:1.55rem; font-weight:800; margin-top:.35rem; letter-spacing:-.025em;
+            font-variant-numeric:tabular-nums; line-height:1.08; }}
+        .yf-tile .d {{ font-size:.82rem; font-weight:700; margin-top:.25rem; font-variant-numeric:tabular-nums; }}
         .yf-tile .d.sub {{ color:{MUTED}; font-weight:600; }}
         .up {{ color:{UP}; }} .down {{ color:{DOWN}; }}
 
-        .yf-h {{ font-size:1.02rem; font-weight:700; margin:1.9rem 0 .7rem; }}
-        .yf-h .sub {{ color:{MUTED}; font-weight:500; font-size:.84rem; margin-left:.5rem; }}
+        /* section headers with a small accent tick */
+        .yf-h {{ font-size:1.06rem; font-weight:700; margin:2.4rem 0 .8rem; letter-spacing:-.01em;
+            display:flex; align-items:baseline; gap:.55rem; }}
+        .yf-h::before {{ content:""; width:3px; height:15px; border-radius:2px; background:{TEAL};
+            align-self:center; box-shadow:0 0 8px rgba(22,196,168,0.6); }}
+        .yf-h .sub {{ color:{MUTED}; font-weight:500; font-size:.82rem; }}
 
-        /* watchlist */
-        .yf-list {{ background:{SURFACE}; border:1px solid {BORDER}; border-radius:12px; overflow:hidden; }}
+        /* lists: shell tray wrapping an inner plate */
+        .yf-list {{ background:{SHELL}; border:1px solid {BORDER}; border-radius:18px; padding:5px;
+            box-shadow:0 1px 1px rgba(0,0,0,0.5), 0 16px 34px -16px rgba(0,0,0,0.7); }}
+        .yf-list-core {{ background:{SURFACE}; border-radius:14px; overflow:hidden;
+            box-shadow:inset 0 1px 0 {HAIR}; }}
         .yf-row {{ display:grid; grid-template-columns:1.7fr 84px 1.1fr 1.4fr; align-items:center;
-            gap:.6rem; padding:.72rem 1rem; border-top:1px solid {BORDER}; }}
+            gap:.6rem; padding:.78rem 1.05rem; border-top:1px solid {BORDER};
+            transition:background .35s cubic-bezier(.32,.72,0,1); }}
         .yf-row:first-child {{ border-top:none; }}
-        .yf-row .sym {{ font-weight:700; font-size:.95rem; }}
+        .yf-row:hover {{ background:rgba(255,255,255,0.022); }}
+        .yf-row .sym {{ font-weight:700; font-size:.95rem; letter-spacing:-.01em; }}
         .yf-row .co {{ color:{MUTED}; font-size:.76rem; white-space:nowrap; overflow:hidden;
             text-overflow:ellipsis; }}
         .yf-row .px {{ text-align:right; font-weight:700; font-variant-numeric:tabular-nums; font-size:.92rem; }}
-        .yf-badge {{ display:inline-block; min-width:62px; text-align:center; padding:.18rem .4rem;
-            border-radius:6px; font-size:.78rem; font-weight:700; font-variant-numeric:tabular-nums; }}
-        .yf-wt {{ display:flex; align-items:center; gap:.5rem; justify-content:flex-end; }}
-        .yf-wt .track {{ flex:1; max-width:120px; height:7px; border-radius:4px; background:{SURFACE2}; overflow:hidden; }}
-        .yf-wt .fill {{ height:100%; background:{TEAL}; }}
+        .yf-badge {{ display:inline-block; min-width:62px; text-align:center; padding:.2rem .45rem;
+            border-radius:7px; font-size:.78rem; font-weight:700; font-variant-numeric:tabular-nums; }}
+        .yf-wt {{ display:flex; align-items:center; gap:.55rem; justify-content:flex-end; }}
+        .yf-wt .track {{ flex:1; max-width:120px; height:7px; border-radius:5px; background:{SURFACE2};
+            overflow:hidden; box-shadow:inset 0 1px 2px rgba(0,0,0,0.4); }}
+        .yf-wt .fill {{ height:100%; border-radius:5px;
+            background:linear-gradient(90deg,{TEAL},#1fe0bd); }}
         .yf-wt .pct {{ font-size:.82rem; font-weight:700; color:{TEXT}; font-variant-numeric:tabular-nums;
             min-width:42px; text-align:right; }}
         .yf-head {{ display:grid; grid-template-columns:1.7fr 84px 1.1fr 1.4fr; gap:.6rem;
-            padding:.5rem 1rem; color:{MUTED}; font-size:.7rem; font-weight:700; letter-spacing:.05em;
-            text-transform:uppercase; }}
+            padding:.62rem 1.05rem .5rem; color:{MUTED}; font-size:.68rem; font-weight:700;
+            letter-spacing:.1em; text-transform:uppercase; }}
         .yf-head .r {{ text-align:right; }}
+        .yf-empty {{ color:{MUTED}; padding:1.5rem 1.2rem; font-size:.9rem; }}
 
-        .yf-tile-row {{ display:grid; grid-template-columns:repeat(4,1fr); gap:.7rem; }}
-        .yf-empty {{ color:{MUTED}; padding:1.4rem 1.1rem; font-size:.9rem; }}
-        .yf-legend {{ display:flex; flex-wrap:wrap; gap:1rem; margin-top:.5rem; }}
+        .yf-legend {{ display:flex; flex-wrap:wrap; gap:1.1rem; margin-top:.7rem; padding-left:.2rem; }}
         .yf-legend span {{ color:{MUTED}; font-size:.78rem; font-weight:600;
             display:inline-flex; align-items:center; gap:.4rem; }}
         .yf-legend i {{ width:10px; height:10px; border-radius:3px; }}
+
+        /* refresh button -> pill that matches the bezels */
+        .stButton > button {{ background:{SHELL}; color:{TEXT}; border:1px solid {BORDER};
+            border-radius:999px; font-weight:600; font-size:.82rem; padding:.4rem .9rem;
+            box-shadow:inset 0 1px 0 {HAIR}; transition:transform .4s cubic-bezier(.32,.72,0,1),
+            background .4s ease; }}
+        .stButton > button:hover {{ background:{SURFACE2}; border-color:{TEAL}; transform:translateY(-1px); }}
+        .stButton > button:active {{ transform:scale(.97); }}
 
         @media (max-width:760px) {{
             .yf-tiles, .yf-tile-row {{ grid-template-columns:repeat(2,1fr); }}
@@ -331,8 +366,9 @@ def sparkline(values, color, w=76, h=22):
 
 
 def tile(label, value, delta_html=""):
-    return (f"<div class='yf-tile'><div class='k'>{label}</div>"
-            f"<div class='v'>{value}</div>{delta_html}</div>")
+    return (f"<div class='yf-tile'><div class='yf-core'>"
+            f"<div class='k'>{label}</div><div class='v'>{value}</div>{delta_html}"
+            f"</div></div>")
 
 
 # ----------------------------------------------------------------- charts
@@ -347,34 +383,39 @@ def price_chart(prices, series):
         x=close.index, y=close, mode="lines", name="Close",
         line=dict(color=line, width=2), fill="tozeroy", fillcolor=fill,
         hovertemplate="%{x|%b %d, %Y}<br>$%{y:.2f}<extra></extra>"))
-    # regime overlay bands
-    for x0, x1, reg in _runs(series["canonical"]):
+    # regime overlay bands (smoothed for a clean, organized look)
+    for x0, x1, reg in _smooth_runs(series["canonical"]):
         fig.add_vrect(x0=x0, x1=x1, fillcolor=REGIME_COLORS.get(reg, MUTED),
-                      opacity=0.06, line_width=0, layer="below")
+                      opacity=0.08, line_width=0, layer="below")
     fig.update_layout(
         height=330, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=8, r=8, t=8, b=8), font=dict(family=FONT, color=MUTED, size=12),
-        hovermode="x", hoverlabel=dict(bgcolor=SURFACE2, bordercolor=BORDER,
-                                       font=dict(family=FONT, color=TEXT)), showlegend=False)
+        margin=dict(l=10, r=52, t=8, b=8), font=dict(family=FONT, color=MUTED, size=12),
+        hovermode="x", hoverdistance=-1, spikedistance=-1,
+        hoverlabel=dict(bgcolor=SURFACE2, bordercolor=BORDER,
+                        font=dict(family=FONT, color=TEXT)), showlegend=False)
+    # spikesnap="cursor" -> the crosshair follows the mouse fluidly instead of
+    # jumping between data points; hoverdistance=-1 keeps the tooltip always on.
     fig.update_xaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED,
-                     showspikes=True, spikecolor=MUTED, spikethickness=1, spikedash="dot")
+                     showspikes=True, spikecolor=TEXT, spikethickness=1, spikedash="dot",
+                     spikemode="across", spikesnap="cursor")
     fig.update_yaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED,
                      tickprefix="$", range=[lo - pad, hi + pad], side="right")
     return fig
 
 
-def regime_ribbon(prices, series):
-    idx = prices.index
-    fig = go.Figure(go.Scatter(x=[idx[0], idx[-1]], y=[0, 0], mode="lines",
-                               line=dict(width=0), hoverinfo="skip", showlegend=False))
-    for x0, x1, reg in _runs(series["canonical"]):
-        fig.add_vrect(x0=x0, x1=x1, fillcolor=REGIME_COLORS.get(reg, MUTED),
-                      opacity=0.92, line_width=0, layer="below")
-    fig.update_layout(height=30, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                      margin=dict(l=8, r=8, t=0, b=0))
-    fig.update_xaxes(visible=False, range=[idx[0], idx[-1]])
-    fig.update_yaxes(visible=False, range=[0, 1])
-    return fig
+def regime_ribbon(prices, series) -> str:
+    """Clean proportional regime strip as HTML: flush segments, identical height,
+    rounded ends, no gaps. (Plotly vrects leave slivers and subpixel height jitter.)
+    Side margins match the price chart's plot area so it lines up underneath."""
+    runs = _smooth_runs(series["canonical"])
+    segs = []
+    for x0, x1, reg in runs:
+        weight = max((x1 - x0).days, 1)   # width proportional to duration
+        col = REGIME_COLORS.get(reg, MUTED)
+        segs.append(f"<div style='flex:{weight} 1 0;background:{col}'></div>")
+    return ("<div style='display:flex;height:20px;border-radius:7px;overflow:hidden;"
+            "margin:8px 52px 2px 10px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.12),"
+            "0 2px 6px rgba(0,0,0,0.45)'>" + "".join(segs) + "</div>")
 
 
 def _runs(series):
@@ -385,6 +426,28 @@ def _runs(series):
             start = i
     runs.append((idx[start], idx[-1], vals[start]))
     return runs
+
+
+def _smooth_runs(series, min_len: int = 11):
+    """Contiguous regime blocks for display, with short flickers (< min_len bars)
+    absorbed into the preceding block so the ribbon reads as clean, coherent
+    bands instead of a cluttered barcode. Display-only — never affects trading."""
+    vals, idx = series.tolist(), series.index
+    if not vals:
+        return []
+    runs, start = [], 0
+    for i in range(1, len(vals)):
+        if vals[i] != vals[i - 1]:
+            runs.append([start, i - 1, vals[start]])
+            start = i
+    runs.append([start, len(vals) - 1, vals[start]])
+    merged = []
+    for r in runs:
+        if merged and (r[1] - r[0] + 1) < min_len:
+            merged[-1][1] = r[1]
+        else:
+            merged.append(r)
+    return [(idx[a], idx[b], lab) for a, b, lab in merged]
 
 
 # ----------------------------------------------------------------- view
@@ -477,18 +540,19 @@ def main():
                     "<span class='sub'>30-day challenge · paper equity rebased to 100</span></div>",
                     unsafe_allow_html=True)
         if ch is None:
-            st.markdown("<div class='yf-list'><div class='yf-empty'>Scoreboard builds after your "
-                        "first full trading day. Orders are in — check back once the market opens "
-                        "and they fill.</div></div>", unsafe_allow_html=True)
+            st.markdown("<div class='yf-list'><div class='yf-list-core'><div class='yf-empty'>"
+                        "Scoreboard builds after your first full trading day. Orders are in — check "
+                        "back once the market opens and they fill.</div></div></div>",
+                        unsafe_allow_html=True)
         else:
             bot_n, spy_n = ch
             lead = float(bot_n.iloc[-1] - spy_n.iloc[-1])
             lcls, lword = ("up", "ahead of") if lead >= 0 else ("down", "behind")
-            st.markdown(f"<div class='yf-tile' style='margin-bottom:.6rem'>"
+            st.markdown(f"<div class='yf-tile' style='margin-bottom:.6rem'><div class='yf-core'>"
                         f"<div class='k'>Your edge vs S&amp;P 500</div>"
                         f"<div class='v {lcls}'>{lead:+.2f}%</div>"
                         f"<div class='d sub'>you {bot_n.iloc[-1]-100:+.2f}% · "
-                        f"SPY {spy_n.iloc[-1]-100:+.2f}% · {lword} the index</div></div>",
+                        f"SPY {spy_n.iloc[-1]-100:+.2f}% · {lword} the index</div></div></div>",
                         unsafe_allow_html=True)
             cfig = go.Figure()
             cfig.add_trace(go.Scatter(x=bot_n.index, y=bot_n, name="You", mode="lines",
@@ -498,22 +562,24 @@ def main():
                                       line=dict(color=MUTED, width=1.8, dash="dot"),
                                       hovertemplate="SPY: %{y:.2f}<extra></extra>"))
             cfig.update_layout(height=240, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                               margin=dict(l=8, r=8, t=6, b=8), hovermode="x unified",
+                               margin=dict(l=10, r=10, t=6, b=8), hovermode="x unified",
+                               hoverdistance=-1, spikedistance=-1,
                                font=dict(family=FONT, color=MUTED, size=12),
                                legend=dict(orientation="h", y=1.12, x=0),
                                hoverlabel=dict(bgcolor=SURFACE2, bordercolor=BORDER,
                                                font=dict(family=FONT, color=TEXT)))
-            cfig.update_xaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED)
+            cfig.update_xaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED,
+                              showspikes=True, spikecolor=TEXT, spikethickness=1, spikedash="dot",
+                              spikemode="across", spikesnap="cursor")
             cfig.update_yaxes(showgrid=True, gridcolor=BORDER, gridwidth=0.4, color=MUTED)
             st.plotly_chart(cfig, use_container_width=True, config={"displayModeBar": False})
 
     # --- price chart ---
-    st.markdown(f"<div class='yf-h'>{anchor} price <span class='sub'>2-year history · "
+    st.markdown(f"<div class='yf-h'>{anchor} price <span class='sub'>regime-detection window · "
                 f"shaded by detected regime</span></div>", unsafe_allow_html=True)
     st.plotly_chart(price_chart(prices, series), use_container_width=True,
                     config={"displayModeBar": False})
-    st.plotly_chart(regime_ribbon(prices, series), use_container_width=True,
-                    config={"displayModeBar": False})
+    st.markdown(regime_ribbon(prices, series), unsafe_allow_html=True)
     present = [r for r in REGIME_COLORS if (series["canonical"] == r).any()]
     st.markdown("<div class='yf-legend'>" + "".join(
         f"<span><i style='background:{REGIME_COLORS[r]}'></i>{r}</span>" for r in present)
@@ -523,8 +589,8 @@ def main():
     st.markdown(f"<div class='yf-h'>Target basket <span class='sub'>momentum + regime + vol target · "
                 f"regime {b_regime} · {gross:.0%} invested</span></div>", unsafe_allow_html=True)
     if not rows:
-        st.markdown("<div class='yf-list'><div class='yf-empty'>Basket unavailable.</div></div>",
-                    unsafe_allow_html=True)
+        st.markdown("<div class='yf-list'><div class='yf-list-core'><div class='yf-empty'>"
+                    "Basket unavailable.</div></div></div>", unsafe_allow_html=True)
     else:
         # Why these stocks, why this size — the selection + sizing rationale.
         each = (gross / len(rows)) if rows else 0
@@ -555,7 +621,8 @@ def main():
                   <div class="yf-wt wtcol"><div class="track"><div class="fill" style="width:{wbar:.0f}%"></div></div>
                     <span class="pct">{r['weight']:.1%}</span></div>
                 </div>""")
-        st.markdown(f"<div class='yf-list'>{head}{''.join(body)}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='yf-list'><div class='yf-list-core'>{head}{''.join(body)}</div></div>",
+                    unsafe_allow_html=True)
         if gross <= 0:
             st.caption("Regime is risk-off → the bot holds cash. Names above are the current "
                        "momentum leaders it would buy when the regime turns risk-on.")
@@ -578,8 +645,8 @@ def main():
     if not orders:
         msg = ("No orders yet — they appear here once the bot trades."
                if acct else "Connect Alpaca to see your orders.")
-        st.markdown(f"<div class='yf-list'><div class='yf-empty'>{msg}</div></div>",
-                    unsafe_allow_html=True)
+        st.markdown(f"<div class='yf-list'><div class='yf-list-core'><div class='yf-empty'>{msg}"
+                    f"</div></div></div>", unsafe_allow_html=True)
     else:
         body = []
         for o in orders:
@@ -597,7 +664,8 @@ def main():
                   <div><div class="sym" style="font-size:.9rem">{title}</div>
                     <div class="co">{sub}</div></div>
                   <div class="co">{ts}</div></div>""")
-        st.markdown(f"<div class='yf-list'>{''.join(body)}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='yf-list'><div class='yf-list-core'>{''.join(body)}</div></div>",
+                    unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
