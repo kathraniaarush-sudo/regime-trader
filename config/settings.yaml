@@ -95,6 +95,8 @@ portfolio:
   momentum_lookback: 252       # 12-month trailing window for momentum...
   momentum_skip: 21            # ...skipping the most recent month (reversal guard)
   rebalance_days: 21           # re-rank / rebalance roughly monthly
+  daily_derisk: true           # between rebalances, go to cash same-day if the
+                               # regime turns risk-off (bear/crash) instead of waiting
   target_vol: 0.09             # annualised vol target (keeps drawdown < ~10%)
   vol_lookback: 20             # trailing window for realised-vol estimate
   max_leverage: 1.50           # cap on basket gross exposure

@@ -44,3 +44,12 @@ def test_cash_target_closes_everything():
         {}, equity=100_000, prices=PRICES, current_shares={"AAA": 100, "BBB": 200})
     assert {o[0] for o in orders} == {"AAA", "BBB"}
     assert all(o[1] == "sell" for o in orders)
+
+
+def test_should_derisk_only_when_risk_off_and_holding():
+    pt = PortfolioTrader()
+    assert pt.should_derisk("bear", holding=True) is True      # risk-off + holding -> cash
+    assert pt.should_derisk("crash", holding=True) is True
+    assert pt.should_derisk("bull", holding=True) is False     # risk-on -> stay invested
+    assert pt.should_derisk("neutral", holding=True) is False  # partial exposure, not risk-off
+    assert pt.should_derisk("bear", holding=False) is False    # nothing to sell

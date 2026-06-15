@@ -24,7 +24,7 @@ import pandas as pd
 
 from regime_trader.brain.hmm_engine import RegimeDetector
 from regime_trader.broker.alpaca_client import AlpacaClient
-from regime_trader.broker.market_data import get_histories
+from regime_trader.broker.market_data import get_histories, get_history
 from regime_trader.broker.order_executor import OrderExecutor
 from regime_trader.broker.position_tracker import PositionTracker
 from regime_trader.core.features import build_features
@@ -59,6 +59,9 @@ class PortfolioTrader:
         self.rebalance_days = int(p.get("rebalance_days", 21))
         self.vol_lookback = int(p.get("vol_lookback", 20))
         self.train_lookback = s.get("hmm.train_lookback_days", 504)
+        # Between monthly rebalances, check the regime each run and go to cash
+        # immediately if it turns risk-off (don't wait for the next rebalance).
+        self.daily_derisk = bool(p.get("daily_derisk", True))
 
         self.ranker = MomentumRanker(
             lookback=p.get("momentum_lookback", 252),
@@ -105,6 +108,16 @@ class PortfolioTrader:
             max_flips_in_window=c.get("max_flips_in_window", 4),
             flip_window_bars=c.get("flip_window_bars", 20),
         )
+
+    def detect_regime(self) -> str:
+        """Current canonical regime from the anchor (causal, completed bars)."""
+        prices = get_history(self.anchor, self.train_lookback + 80)
+        feats = build_features(prices)
+        return self._new_detector().fit(feats).detect(feats).canonical
+
+    def should_derisk(self, regime: str, holding: bool) -> bool:
+        """Go to cash now if the regime is risk-off (target gross 0) and we hold."""
+        return bool(holding) and self.constructor.gross_for(regime) <= 0
 
     def compute_target(self, closes: pd.DataFrame) -> TargetBasket:
         """Momentum selection + regime overlay + vol target -> target weights."""
@@ -262,14 +275,29 @@ class PortfolioTrader:
                 now = datetime.now(timezone.utc)
                 equity = self.client.get_account().equity
                 decision = self.risk.evaluate(equity, now)
-                # React to breakers every tick; only re-rank on the cadence
-                # (or immediately when forced).
+                # Full rebalance on breakers, when forced, or on the monthly cadence.
                 if (decision.halted or decision.flatten_all or force
-                        or self._due_for_rebalance(now) or dry_run):
+                        or self._due_for_rebalance(now)):
                     self.rebalance(dry_run=dry_run)
                 else:
-                    logger.info("No rebalance due (equity %.0f). Next in <= %dd.",
-                                equity, self.rebalance_days)
+                    # Daily regime check between rebalances: if the regime has
+                    # turned risk-off, de-risk to cash now instead of waiting.
+                    regime = self.detect_regime()
+                    holding = len(self.positions.list_positions()) > 0
+                    if self.daily_derisk and self.should_derisk(regime, holding):
+                        log_event(logger, logging.WARNING,
+                                  f"Daily de-risk: {regime} regime is risk-off -> cash",
+                                  event="derisk", regime=regime, equity=equity)
+                        self.alerts.warning(f"Regime turned {regime} (risk-off) — de-risking to cash.")
+                        if dry_run:
+                            print(f"[DRY RUN] regime {regime} is risk-off -> "
+                                  f"would sell all positions and hold cash")
+                        else:
+                            self.executor.cancel_all()
+                            self.executor.close_all_positions()
+                    else:
+                        logger.info("No action (regime=%s, holding=%s). Next rebalance <= %dd.",
+                                    regime, holding, self.rebalance_days)
             except Exception as exc:
                 logger.exception("Portfolio loop iteration failed: %s", exc)
                 self.alerts.warning(f"Loop error: {exc}")
