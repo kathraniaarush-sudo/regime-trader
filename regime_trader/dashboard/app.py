@@ -157,19 +157,27 @@ def fit_detector(symbol: str, lookback: int, hmm_cfg: tuple):
 
 @st.cache_data(ttl=900, show_spinner=False)
 def load_basket():
-    """Target basket with per-name price, day change, weight, and sparkline."""
+    """Target basket with per-name price, day change, weight, sparkline, and the
+    momentum score + rank that justify why each name was selected."""
     from regime_trader.portfolio_trader import PortfolioTrader
     from regime_trader.broker.market_data import get_histories
     pt = PortfolioTrader()
     closes = get_histories(pt.universe + [pt.anchor], pt.train_lookback + 60).dropna(axis=1)
+    stocks = [c for c in closes.columns if c != pt.anchor]
     b = pt.compute_target(closes)
+
+    # Momentum scores across the whole universe -> the selection rationale.
+    scores = pt.ranker.scores(closes[stocks]).dropna().sort_values(ascending=False)
+    rank_of = {sym: i + 1 for i, sym in enumerate(scores.index)}
+
     rows = []
     for t in b.selected:
         s = closes[t].dropna()
         chg = float(s.iloc[-1] / s.iloc[-2] - 1) if len(s) > 1 else 0.0
         rows.append({"ticker": t, "name": NAMES.get(t, t), "weight": float(b.weights.get(t, 0.0)),
-                     "price": float(s.iloc[-1]), "chg": chg, "spark": s.tail(30).tolist()})
-    return b.regime, sum(b.weights.values()), rows
+                     "price": float(s.iloc[-1]), "chg": chg, "spark": s.tail(30).tolist(),
+                     "momentum": float(scores.get(t, 0.0)), "rank": rank_of.get(t, 0)})
+    return b.regime, sum(b.weights.values()), rows, len(stocks)
 
 
 @st.cache_data(ttl=600, show_spinner=False)
@@ -268,6 +276,20 @@ def fetch_live() -> dict:
     except Exception:
         pass
     return out
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_orders(limit: int = 12) -> list[dict]:
+    """Recent orders straight from Alpaca, so the feed works on any host
+    (the local event log only exists where the bot itself ran)."""
+    try:
+        from regime_trader.broker.alpaca_client import AlpacaClient
+        c = AlpacaClient()
+        if not c.is_configured:
+            return []
+        return c.get("/v2/orders", params={"status": "all", "limit": limit, "direction": "desc"}) or []
+    except Exception:
+        return []
 
 
 def read_signal_feed(limit: int = 8) -> list[dict]:
@@ -414,9 +436,9 @@ def main():
         port_v, port_d = "—", "<div class='d sub'>Connect Alpaca in .env</div>"
 
     try:
-        b_regime, gross, rows = load_basket()
+        b_regime, gross, rows, n_universe = load_basket()
     except Exception as exc:
-        b_regime, gross, rows = regime, 0.0, []
+        b_regime, gross, rows, n_universe = regime, 0.0, [], 0
 
     reg_tile = tile("Detected regime",
                     f"<span style='color:{rc}'>{regime.upper()}</span>",
@@ -485,17 +507,29 @@ def main():
         st.markdown("<div class='yf-list'><div class='yf-empty'>Basket unavailable.</div></div>",
                     unsafe_allow_html=True)
     else:
+        # Why these stocks, why this size — the selection + sizing rationale.
+        each = (gross / len(rows)) if rows else 0
+        st.markdown(
+            f"<div style='color:{MUTED};font-size:.84rem;line-height:1.6;margin:-.2rem 0 .8rem'>"
+            f"<b style='color:{TEXT}'>Why these names:</b> the {len(rows)} strongest of {n_universe} "
+            f"S&amp;P stocks by <b>12-month momentum</b> (trailing return, skipping the last month to "
+            f"avoid short-term reversal). <b style='color:{TEXT}'>Why this size:</b> the <b>{b_regime}</b> "
+            f"regime sets total exposure to <b>{gross:.0%}</b>, then volatility targeting equal-weights "
+            f"them (~{each:.1%} each) so the basket runs near its risk target.</div>",
+            unsafe_allow_html=True)
         maxw = max((r["weight"] for r in rows), default=1) or 1
-        head = ("<div class='yf-head'><div>Symbol</div><div>Trend</div>"
+        head = ("<div class='yf-head'><div>Symbol · why selected</div><div>Trend</div>"
                 "<div class='r'>Price · 1d</div><div class='r wtcol'>Target weight</div></div>")
         body = []
         for r in rows:
             col = UP if r["chg"] >= 0 else DOWN
             badge_bg = "rgba(21,199,132,0.14)" if r["chg"] >= 0 else "rgba(240,97,109,0.14)"
             wbar = (r["weight"] / maxw * 100) if r["weight"] else 0
+            why = f"#{r['rank']} by momentum · {r['momentum']*100:+.0f}% 12-mo trend" if r.get("rank") else ""
             body.append(
                 f"""<div class="yf-row">
-                  <div><div class="sym">{r['ticker']}</div><div class="co">{r['name']}</div></div>
+                  <div><div class="sym">{r['ticker']}</div><div class="co">{r['name']}</div>
+                    <div style="color:{TEAL};font-size:.72rem;font-weight:600;margin-top:.12rem">{why}</div></div>
                   <div>{sparkline(r['spark'], col)}</div>
                   <div class="px">{money(r['price'])}<br>
                     <span class="yf-badge" style="color:{col};background:{badge_bg}">{pct(r['chg']*100)}</span></div>
@@ -518,33 +552,31 @@ def main():
     st.markdown("<div class='yf-tile-row'>" + "".join(tile(k, v, d) for k, v, d in tiles)
                 + "</div>", unsafe_allow_html=True)
 
-    # --- signal feed ---
-    st.markdown("<div class='yf-h'>Signal feed</div>", unsafe_allow_html=True)
-    feed = read_signal_feed()
-    if not feed:
-        st.markdown("<div class='yf-list'><div class='yf-empty'>No activity yet. Run "
-                    "<code>python -m regime_trader.main portfolio --once</code> to generate signals."
-                    "</div></div>", unsafe_allow_html=True)
+    # --- order activity (live from Alpaca) ---
+    st.markdown("<div class='yf-h'>Order activity <span class='sub'>live from your Alpaca account</span></div>",
+                unsafe_allow_html=True)
+    orders = load_orders()
+    if not orders:
+        msg = ("No orders yet — they appear here once the bot trades."
+               if acct else "Connect Alpaca to see your orders.")
+        st.markdown(f"<div class='yf-list'><div class='yf-empty'>{msg}</div></div>",
+                    unsafe_allow_html=True)
     else:
         body = []
-        for ev in feed:
-            kind = ev.get("event")
-            if kind == "order":
-                side = str(ev.get("side", "")).upper()
-                col = UP if side == "BUY" else DOWN
-                title = f"{side} {ev.get('qty','')} {ev.get('symbol','')}"
-            elif kind == "rebalance":
-                col, title = TEAL, f"Rebalance · regime {ev.get('regime','')}"
-            elif kind == "regime_change":
-                col, title = REGIME_COLORS.get(ev.get("regime", ""), MUTED), f"Regime → {ev.get('regime','')}"
-            else:
-                col, title = MUTED, "Risk check"
-            ts = str(ev.get("ts", ""))[:19].replace("T", " ")
+        for o in orders:
+            side = str(o.get("side", "")).upper()
+            col = UP if side == "BUY" else DOWN
+            qty = o.get("filled_qty") or o.get("qty") or ""
+            title = f"{side} {qty} {o.get('symbol', '')}"
+            status = o.get("status", "")
+            price = o.get("filled_avg_price")
+            sub = status + (f" @ {money(float(price))}" if price else "")
+            ts = str(o.get("filled_at") or o.get("submitted_at") or "")[:16].replace("T", " ")
             body.append(
                 f"""<div class="yf-row" style="grid-template-columns:auto 1fr auto">
                   <div style="width:6px;height:30px;border-radius:3px;background:{col}"></div>
                   <div><div class="sym" style="font-size:.9rem">{title}</div>
-                    <div class="co">{ev.get('msg','')}</div></div>
+                    <div class="co">{sub}</div></div>
                   <div class="co">{ts}</div></div>""")
         st.markdown(f"<div class='yf-list'>{''.join(body)}</div>", unsafe_allow_html=True)
 
