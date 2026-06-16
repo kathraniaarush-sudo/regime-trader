@@ -77,7 +77,10 @@ def get_histories(symbols, lookback_days: int = 504, interval: str = "1d") -> pd
         today = pd.Timestamp.now().normalize()
         closes = closes[closes.index.normalize() < today]
 
-    return closes.dropna(how="all").tail(lookback_days)
+    # Forward-fill intra-series gaps so a single missing bar doesn't make callers
+    # drop a whole column (incl. the regime anchor) via dropna(axis=1). Leading
+    # NaNs (short history) remain, so genuinely short-history names still drop.
+    return closes.ffill().dropna(how="all").tail(lookback_days)
 
 
 class MarketData:
