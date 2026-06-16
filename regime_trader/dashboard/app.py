@@ -604,9 +604,10 @@ def main():
             f"<b style='color:{TEXT}'>Why these names:</b> the {len(rows)} strongest of our "
             f"{n_universe}-stock S&amp;P large-cap watchlist by <b>risk-adjusted 12-month momentum</b> "
             f"(trailing return per unit of volatility, skipping the last month). "
-            f"<b style='color:{TEXT}'>Why this size:</b> the <b>{b_regime}</b> "
-            f"regime sets total exposure to <b>{gross:.0%}</b>, then volatility targeting equal-weights "
-            f"them (~{each:.1%} each) so the basket runs near its risk target.</div>",
+            f"<b style='color:{TEXT}'>Why this size:</b> <b>volatility targeting</b> sets total "
+            f"exposure to <b>{gross:.0%}</b> and equal-weights the basket (~{each:.1%} each) so it runs "
+            f"near its risk target; the hard -10% drawdown breaker is the safety net. "
+            f"(Regime now shown for information only, not gating.)</div>",
             unsafe_allow_html=True)
         maxw = max((r["weight"] for r in rows), default=1) or 1
         head = ("<div class='yf-head'><div>Symbol · why selected</div><div>Trend</div>"

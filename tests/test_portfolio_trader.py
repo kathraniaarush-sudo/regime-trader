@@ -47,7 +47,11 @@ def test_cash_target_closes_everything():
 
 
 def test_should_derisk_only_when_risk_off_and_holding():
+    # Logic test independent of the live config (which no longer gates to cash):
+    # force a gate map with risk-off regimes so the rule itself is exercised.
     pt = PortfolioTrader()
+    pt.constructor.regime_gross = {"crash": 0.0, "bear": 0.0, "neutral": 0.6,
+                                   "bull": 1.0, "euphoria": 1.0}
     assert pt.should_derisk("bear", holding=True) is True      # risk-off + holding -> cash
     assert pt.should_derisk("crash", holding=True) is True
     assert pt.should_derisk("bull", holding=True) is False     # risk-on -> stay invested

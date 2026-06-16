@@ -103,8 +103,7 @@ portfolio:
   weighting: equal               # B1: not adopted ("equal" vs "inverse_vol")
   vol_weight_lookback: 60
   rebalance_days: 21           # re-rank / rebalance roughly monthly
-  daily_derisk: true           # between rebalances, go to cash same-day if the
-                               # regime turns risk-off (bear/crash) instead of waiting
+  daily_derisk: false          # cash-gate removed (see regime_gross note) -> no de-risk-to-cash
   target_vol: 0.09             # annualised vol target (keeps drawdown < ~10%)
   vol_lookback: 20             # trailing window for realised-vol estimate
   max_leverage: 1.50           # cap on basket gross exposure
@@ -112,13 +111,16 @@ portfolio:
   # hmm setting: 6-7 regimes fragment the signal and backtest materially worse
   # (Sharpe 1.28 @ 5 regimes vs 0.90 @ 7). The single-ticker mode prefers more.
   regime_max_regimes: 5
-  # Regime -> base gross exposure on the basket (the HMM risk overlay). Vol
-  # targeting then scales the whole strategy to the target vol, so bear/crash ->
-  # cash is the regime's main job; the exact neutral fraction is second-order.
+  # Regime -> base gross exposure. The cash-gate is REMOVED: an A/B test
+  # (scripts/regime_ab.py) showed gating to cash in bear/crash hurt return,
+  # Sharpe, AND drawdown (it exits after drops and misses rebounds). So every
+  # regime now maps to 1.0 (always invested); risk is handled by vol targeting
+  # plus the hard -10% drawdown circuit breaker. The regime is still detected and
+  # shown on the dashboard for information, but it no longer forces cash.
   regime_gross:
-    crash: 0.00
-    bear: 0.00
-    neutral: 0.60
+    crash: 1.00
+    bear: 1.00
+    neutral: 1.00
     bull: 1.00
     euphoria: 1.00
   # Diversified large-cap universe (includes laggards on purpose to limit
